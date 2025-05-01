@@ -1,0 +1,55 @@
+# Daily Briefing MCP Agent
+This will generate a daily briefing from a sources. You do not need to install them all, the code will run without them all installed but their tools will not be accessible. The instructions for all of them are below. 
+
+## How to install and run
+1. `pip install -r requirements.txt`
+2. You need to `git  clone` the following repos and run `npm install` in all the project roots
+    - https://github.com/nspady/google-calendar-mcp
+    - https://github.com/GongRzhe/Gmail-MCP-Server
+    - https://github.com/makenotion/notion-mcp-server
+    - https://github.com/exa-labs/exa-mcp-server
+3. Follow the instructions at https://github.com/nspady/google-calendar-mcp to set up OAuth for google
+    1. enable Gmail and Google Calendar APIs on Google Cloud
+    2. create an OAuth app for desktop
+    3. download the JSON credentials and change the name to `gcp-oauth.keys.json`, then copy it to the root of both the gmail and gcal projects from above
+    4. run `npm run auth` from the root of `google-calendar-mcp` to set up OAuth access 
+4. For the **Gmail MCP Server** follow the instructions in the README under *"2. Run Authentication"*  
+TLDR: Place the `gcp-oauth.keys.json` file into the root of **Gmail MCP Server** project OR run `mkdir -p ~/.gmail-mcp && mv gcp-oauth.keys.json ~/.gmail-mcp/`. Run `npm run auth` from the root of **Gmail-MCP-Server** to enable OAuth
+5. Follow the instructions at https://github.com/makenotion/notion-mcp-server to set up Notion access
+6. Get an [Exa API key here](https://dashboard.exa.ai/api-keys). 
+7. WhatsApp suppor - Follow the instructions at https://github.com/lharries/whatsapp-mcp to clone and install. This will require you to authenticate to Whatsapp at least once via QR code **in the terminal**
+    1. This requires a specific version of `golang`. If you have already installed go (i.e. with homebrew) and don't want to override it for fear of breaking some system dependcies, download `gvm` then use it to download the required version. You may need to configure your `$PATH` to account for different go versions via gvm
+    2. This repo only has instructions to run via Claude Desktop but you can use the `uv` package manager to create a `.venv` inside the `whatsapp-mcp-server` directory and install the dependencies. These are different than the dependencies for this project. The `host` in this project will automatically activate the venv for you when you run this project
+    3. You will need to regularly run the `main.go` script to sync the latest messages into the sqlite DB. 
+8. (Optional) You may want to comment out code in the above repos that expose tools such as ones that enable delete of emails or notion pages
+9. Set the following enviroment variables in an `.env` file in the project root:
+```
+ANTHROPIC_API_KEY=
+GCAL_MCP_SERVER_PATH=/path/to/google-calendar-mcp/build/index.js
+GMAIL_MCP_SERVER_PATH=/path/to/Gmail-MCP-Server/dist/index.js
+OPENAPI_MCP_HEADERS={"Authorization": "Bearer ntn_YOUR_TOKEN_HERE", "Notion-Version": "2022-06-28"}
+NOTION_MCP_SERVER_PATH=/path/to/notion-mcp-server/bin/cli.mjs
+WHATSAPP_MCP_SERVER_PATH=/path/to/whatsapp-mcp/whatsapp-mcp-server/main.py
+WHATSAPP_MCP_SERVER_VENV_PATH=/path/to/whatsapp-mcp/whatsapp-mcp-server/.venv
+EXA_API_KEY=
+EXA_MCP_SERVER_PATH=/path/to/exa-mcp-server/build/index.js
+```
+
+**Note** the unusual setup for the *Notion Token* under `OPENAPI_MCP_HEADERS`
+
+If you want observability and tracing, set these environmen variables too
+```
+LANGFUSE_SECRET_KEY=
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_HOST="https://cloud.langfuse.com"
+```
+10. To utilize the default daily briefing flow, create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
+You can utilize other names, but update the `variables` at the top of `main` in `host.py`. 
+11. Update the `system_prompt` in `main` in `host.py` with a description of who you are and any extra information that will make the model's output better. 
+12. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `host.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
+For example, if you want the briefing to also check a specific Notion page that has your tasks, the model can also do this
+13. run `python host.py` to create a daily briefing one time. 
+
+## Future Work
+- More connectors
+- Script to run the briefing automatically at the same time every day
