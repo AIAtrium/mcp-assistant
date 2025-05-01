@@ -194,7 +194,7 @@ class MCPHost:
         response = await self._create_claude_message(
             messages, available_tools, current_system_prompt, langfuse_session_id
         )
-        print(f"response: {response}")
+        self._log_claude_response(response)
 
         # Process response and handle tool calls
         final_text = []
@@ -515,6 +515,31 @@ class MCPHost:
             await client.cleanup()
         except Exception as e:
             print(f"Warning: Error during cleanup of {client_name}: {e}")
+
+    def _log_claude_response(self, response):
+        """Log detailed analysis of Claude's response including text outputs and tool calls."""
+        print("\n=== Initial Claude Response Analysis ===")
+        text_outputs = [c for c in response.content if c.type == "text"]
+        tool_calls = [c for c in response.content if c.type == "tool_use"]
+        
+        # Log text outputs
+        if text_outputs:
+            print(f"\n📝 Text Outputs ({len(text_outputs)}):")
+            for i, text in enumerate(text_outputs, 1):
+                print(f"  Output {i}: {text.text}")
+        
+        # Log tool calls
+        if tool_calls:
+            print(f"\n🔧 Tool Calls ({len(tool_calls)}):")
+            for i, tool in enumerate(tool_calls, 1):
+                print(f"\n  Tool {i}:")
+                print(f"    Name: {tool.name}")
+                print(f"    ID: {tool.id}")
+                print("    Input Arguments:")
+                for key, value in tool.input.items():
+                    print(f"      {key}: {value}")
+        
+        print("\n" + "="*40 + "\n")
 
 
 async def main():
