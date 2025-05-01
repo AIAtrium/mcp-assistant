@@ -1,5 +1,5 @@
 # Daily Briefing MCP Agent
-This will generate a daily briefing from a sources. You do not need to install them all, the code will run without them all installed but their tools will not be accessible. The instructions for all of them are below. 
+This will generate a daily briefing from a number of sources. You do not need to install them all, the code will run without them but their tools will not be accessible. Instructions for all tools can be found below. 
 
 ## How to install and run
 1. `pip install -r requirements.txt`
@@ -37,11 +37,11 @@ EXA_MCP_SERVER_PATH=/path/to/exa-mcp-server/build/index.js
 
 **Note** the unusual setup for the *Notion Token* under `OPENAPI_MCP_HEADERS`
 
-If you want observability and tracing, set these environmen variables too
+If you want *observability and tracing*, set these environment variables to:
 ```
 LANGFUSE_SECRET_KEY=
 LANGFUSE_PUBLIC_KEY=
-LANGFUSE_HOST="https://cloud.langfuse.com"
+LANGFUSE_HOST="https://cloud.langfuse.com" #### OR LANGFUSE_HOST="https://us.cloud.langfuse.com"- for Langfuse US Cloud
 ```
 10. To utilize the default daily briefing flow, create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
 You can utilize other names, but update the `variables` at the top of `main` in `host.py`. 
