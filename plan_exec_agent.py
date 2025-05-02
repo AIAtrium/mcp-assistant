@@ -105,8 +105,40 @@ class PlanExecAgent:
         # Return a Plan object instead of a list
         return Plan(steps=steps)
 
-    async def execute_step(self, state: Dict[str, Any], step: str) -> str:
-        pass
+    #TODO: investigate whether it makes sense to feed in previous steps or just the whole list of messages to the LLM
+    #TODO: look at the implemenation of create_react_agent
+    async def execute_step(self, state: State, step: str) -> str:
+        """Execute a single step from the plan using the MCP clients."""
+        executor_system_prompt = f"""
+        You are an execution agent tasked with carrying out a specific step in a plan.
+        Your current task is to execute the following step: "{step}"
+        
+        You have access to tools to help you accomplish this task. Use these tools to complete the step.
+        Focus only on completing this specific step - do not attempt to execute other steps in the plan.
+        
+        After using the necessary tools, provide a brief summary of what you did and what you learned.
+        """
+        
+        # Create context for the execution, including past steps
+        past_steps_context = ""
+        if "past_steps" in state and state["past_steps"]:
+            past_steps_context = "## Previous steps that have been completed:\n"
+            for i, (past_step, result) in enumerate(state["past_steps"]):
+                past_steps_context += f"{i+1}. Step: {past_step}\n   Result: {result}\n\n"
+        
+        objective_context = f"## Your objective:\n{state['input']}\n\n"
+        plan_context = f"## Overall plan:\n" + "\n".join([f"{i+1}. {s}" for i, s in enumerate(state["current_plan"])]) + "\n\n"
+        
+        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
+        
+        # We'll use the existing process_query method to handle the tool calling loop
+        result = await self.mcp_host.process_query(
+            execution_prompt, 
+            system_prompt=executor_system_prompt,
+            langfuse_session_id=state['langfuse_session_id']
+        )
+        
+        return result
 
     async def replan(self, state: State) -> Act:
         """
@@ -323,17 +355,22 @@ async def main():
         ### FOR TESTING
         state = {
             'input': query,
-            'langfuse_session_id': datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+            'langfuse_session_id': datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
+            'past_steps': [],  # Initialize with empty list
+            'current_plan': [] # Will be filled after getting the plan
         }
 
         plan = await host.initial_plan(state)
-        print("####### INITIALPLAN #######")
+        state['initial_plan'] = plan.steps
+        state['current_plan'] = plan.steps.copy()
+        print("####### INITIAL PLAN #######")
         print(plan)
-        state['inital_plan'] = plan.steps
-        state['current_plan'] = plan.steps
 
-        past_step = (plan.steps[0], "Operation failed")
-        state['past_steps'] = [past_step]
+        print("####### EXECUTING STEP #######")
+        result = await host.execute_step(state, plan.steps[0])
+        print("####### STEP RESULT #######")
+        print(result)
+        state['past_steps'] = [(plan.steps[0], result)]
 
         replan = await host.replan(state)
         print("####### REPLAN #######")
