@@ -171,9 +171,7 @@ class MCPHost:
         self.tool_to_client_map = tool_to_client_map
         return tools, tool_to_client_map
 
-    async def process_query(self, query: str, system_prompt: str = None, langfuse_session_id: str = None):
-        
-
+    async def process_query(self, query: str, system_prompt: str = None, langfuse_session_id: str = None, state: Dict = None):
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
@@ -248,6 +246,10 @@ class MCPHost:
                     final_text.append(response.content[0].text)
                 break
 
+        # Add a line at the end, before returning the result
+        if state is not None and "tool_results" in state:
+            state["tool_results"].update(tool_results_context)
+        
         return "\n".join(final_text)
 
     async def _prepare_query(self, query: str) -> str:

@@ -14,6 +14,7 @@ class State(TypedDict):
     past_steps: Annotated[List[Tuple], operator.add]
     response: str
     langfuse_session_id: str
+    tool_results: Dict[str, Any]
 
 
 class Plan(BaseModel):
@@ -82,7 +83,6 @@ class PlanExecAgent:
         response = await self.mcp_host._create_claude_message(
             messages, [planning_tools["plan_tool"]], plan_system_prompt, state['langfuse_session_id']
         )
-        self.mcp_host._log_claude_response(response)
 
         steps = []
         
@@ -105,10 +105,11 @@ class PlanExecAgent:
         # Return a Plan object instead of a list
         return Plan(steps=steps)
 
-    #TODO: investigate whether it makes sense to feed in previous steps or just the whole list of messages to the LLM
     #TODO: look at the implemenation of create_react_agent
     async def execute_step(self, state: State, step: str) -> str:
         """Execute a single step from the plan using the MCP clients."""
+        
+        # TODO: the 'RESULT:' part gets added after each iteration of the agentic loop, so it appears multiple times
         executor_system_prompt = f"""
         You are an execution agent tasked with carrying out a specific step in a plan.
         Your current task is to execute the following step: "{step}"
@@ -116,9 +117,18 @@ class PlanExecAgent:
         You have access to tools to help you accomplish this task. Use these tools to complete the step.
         Focus only on completing this specific step - do not attempt to execute other steps in the plan.
         
-        After using the necessary tools, provide a brief summary of what you did and what you learned.
+        IMPORTANT: If you retrieve data that will be needed by future steps (like email IDs, calendar events, etc.):
+        1. Process the data completely in this step if that's what the step requires
+        2. Provide a clear summary of what data you retrieved and how it's organized
+        3. Begin your summary with "RESULT:" followed by what you accomplished
+
+        For iterative tasks that process multiple items:
+        - Make sure to process ALL items completely
+        - Maintain a comprehensive summary that includes information from all items
+        - Don't truncate or summarize too aggressively
         """
         
+        # TODO: not clear if we want to pass this context in
         # Create context for the execution, including past steps
         past_steps_context = ""
         if "past_steps" in state and state["past_steps"]:
@@ -131,11 +141,15 @@ class PlanExecAgent:
         
         execution_prompt = f"{objective_context}{plan_context}{past_steps_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
         
-        # We'll use the existing process_query method to handle the tool calling loop
+        tool_results = state.get("tool_results")
+        if tool_results is None:
+            state["tool_results"] = {}
+
         result = await self.mcp_host.process_query(
             execution_prompt, 
             system_prompt=executor_system_prompt,
-            langfuse_session_id=state['langfuse_session_id']
+            langfuse_session_id=state['langfuse_session_id'],
+            state=state
         )
         
         return result
@@ -172,12 +186,22 @@ class PlanExecAgent:
         # only use current plan, not initial plan
         current_plan_context = "## Current plan:\n" + "\n".join([f"{i+1}. {s}" for i, s in enumerate(state["current_plan"])]) + "\n\n"
         
+        tool_context = ""
+        if "tool_results" in state and state["tool_results"]:
+            tool_context = "## Data available from previous steps:\n"
+            for key, value in state["tool_results"].items():
+                if isinstance(value, list):
+                    tool_context += f"- {key}: {len(value)} items\n"
+                else:
+                    tool_context += f"- {key}: Data available\n"
+
         replan_prompt = f"""
         ## Objective:
         {state['input']}
         
         {current_plan_context}
         {past_steps_context}
+        {tool_context}
         
         Based on the progress so far, decide whether to:
         1. Continue with an updated plan (use submit_plan tool if there are still steps needed)
@@ -193,7 +217,6 @@ class PlanExecAgent:
         response = await self.mcp_host._create_claude_message(
             messages, replan_tools, replan_system_prompt, state['langfuse_session_id']
         )
-        self.mcp_host._log_claude_response(response)
         
         # Process the response to determine the action
         for content in response.content:
@@ -357,7 +380,10 @@ async def main():
             'input': query,
             'langfuse_session_id': datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
             'past_steps': [],  # Initialize with empty list
-            'current_plan': [] # Will be filled after getting the plan
+            'current_plan': [], # Will be filled after getting the plan
+            'tool_results': {},  # Initialize empty tool_results
+            'initial_plan': [], # Will be filled after getting the plan
+            'response': ''  # Empty response initially
         }
 
         plan = await host.initial_plan(state)
@@ -371,6 +397,9 @@ async def main():
         print("####### STEP RESULT #######")
         print(result)
         state['past_steps'] = [(plan.steps[0], result)]
+
+        print("####### CHECK STATE TOOL RESULTS #######")
+        print(state['tool_results'])
 
         replan = await host.replan(state)
         print("####### REPLAN #######")
