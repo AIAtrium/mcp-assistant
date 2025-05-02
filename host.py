@@ -171,8 +171,8 @@ class MCPHost:
         self.tool_to_client_map = tool_to_client_map
         return tools, tool_to_client_map
 
-    async def process_query(self, query: str, system_prompt: str = None):
-        langfuse_session_id = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+    async def process_query(self, query: str, system_prompt: str = None, langfuse_session_id: str = None):
+        
 
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
@@ -550,6 +550,7 @@ async def main():
     # variables
     DATE = datetime.today().strftime("%Y-%m-%d")
     NOTION_PAGE_TITLE = "Daily Briefings"
+    LANGFUSE_SESSION_ID = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
     # you can provide the model with background information about yourself to personalize its responses
     system_prompt = f"""
@@ -580,7 +581,7 @@ async def main():
         4) Tell me if I have any unread messages on whatsapp. You should search at least the last 10 message threads. If not, say "No unread messages on whatsapp"
         5) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
         """
-        result = await host.process_query(query)
+        result = await host.process_query(query, LANGFUSE_SESSION_ID)
         print(result)
     finally:
         await host.cleanup()
