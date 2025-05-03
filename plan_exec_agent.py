@@ -109,7 +109,6 @@ class PlanExecAgent:
     async def execute_step(self, state: State, step: str) -> str:
         """Execute a single step from the plan using the MCP clients."""
         
-        # TODO: the 'RESULT:' part gets added after each iteration of the agentic loop, so it appears multiple times
         executor_system_prompt = f"""
         You are an execution agent tasked with carrying out a specific step in a plan.
         Your current task is to execute the following step: "{step}"
@@ -152,7 +151,10 @@ class PlanExecAgent:
             state=state
         )
         
-        return result
+        # Extract the most relevant part of the result
+        # NOTE: want want to remove if the performance is poor - too many tokens removed
+        processed_result = self.extract_final_result(result)
+        return processed_result
 
     async def replan(self, state: State) -> Act:
         """
@@ -333,6 +335,26 @@ class PlanExecAgent:
             }
         }
 
+    def extract_final_result(self, text: str) -> str:
+        """
+        Extract the final RESULT section from the text if present, otherwise return the original text.
+        This is to eliminate the repetition of intermediate results added to the `final_text` array
+        inside the mcp_host.process_query function. 
+        We care only about storing the final result of the step in the past_steps array, not the intermediate results.
+        """
+        import re
+        # Find all RESULT: sections
+        result_sections = re.findall(r'RESULT:(.*?)(?=RESULT:|$)', text, re.DOTALL)
+        
+        if result_sections:
+            # Return the last (most complete) RESULT section
+            return result_sections[-1].strip()
+        else:
+            # If no RESULT sections found, return the original text 
+            # but try to clean up a bit by removing tool call logs
+            cleaned_text = re.sub(r'\[Calling tool.*?\]', '', text)
+            return cleaned_text.strip()
+
 
 async def main():
     """
@@ -394,17 +416,30 @@ async def main():
 
         print("####### EXECUTING STEP #######")
         result = await host.execute_step(state, plan.steps[0])
-        print("####### STEP RESULT #######")
+        print("####### STEP ONE RESULT #######")
         print(result)
         state['past_steps'] = [(plan.steps[0], result)]
-
-        print("####### CHECK STATE TOOL RESULTS #######")
-        print(state['tool_results'])
 
         replan = await host.replan(state)
         print("####### REPLAN #######")
         print(replan)
+
+        if isinstance(replan.action, Plan):
+            state['current_plan'] = replan.action.steps
+        else:
+            state['response'] = replan.action.response
+            print("####### RESPONSE #######")
+            print(state['response'])
+            exit(0)
         
+        print("Checking second execution step")
+        result = await host.execute_step(state, state['current_plan'][0])
+        print("####### STEP TWO RESULT #######")
+        print(result)
+        
+        state['past_steps'].append((state['current_plan'][0], result)) 
+        print("#### PAST STEPS AFTER SECOND STEP #####")
+        print(state['past_steps'])
     finally:
         await host.cleanup()
 
