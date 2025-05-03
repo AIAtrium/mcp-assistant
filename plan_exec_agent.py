@@ -199,6 +199,7 @@ class PlanExecAgent:
                 else:
                     tool_context += f"- {key}: Data available\n"
 
+        # NOTE: the context window could get very large here
         replan_prompt = f"""
         ## Objective:
         {state['input']}
@@ -512,52 +513,8 @@ async def main():
         4) Tell me if I have any unread messages on whatsapp. You should search at least the last 10 message threads. If not, say "No unread messages on whatsapp"
         5) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
         """
-        # result = await host.process_query(query)
-        # print(result)
-
-        ### FOR TESTING
-        state = {
-            'input': query,
-            'langfuse_session_id': datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
-            'past_steps': [],  # Initialize with empty list
-            'current_plan': [], # Will be filled after getting the plan
-            'tool_results': {},  # Initialize empty tool_results
-            'initial_plan': [], # Will be filled after getting the plan
-            'response': ''  # Empty response initially
-        }
-
-        plan = await host.initial_plan(state)
-        state['initial_plan'] = plan.steps
-        state['current_plan'] = plan.steps.copy()
-        print("####### INITIAL PLAN #######")
-        print(plan)
-
-        print("####### EXECUTING STEP #######")
-        result = await host.execute_step(state)
-        print("####### STEP ONE RESULT #######")
+        result = await host.execute_plan(query)
         print(result)
-        state['past_steps'] = [(plan.steps[0], result)]
-
-        replan = await host.replan(state)
-        print("####### REPLAN #######")
-        print(replan)
-
-        if isinstance(replan.action, Plan):
-            state['current_plan'] = replan.action.steps
-        else:
-            state['response'] = replan.action.response
-            print("####### RESPONSE #######")
-            print(state['response'])
-            exit(0)
-        
-        print("Checking second execution step")
-        result = await host.execute_step(state)
-        print("####### STEP TWO RESULT #######")
-        print(result)
-        
-        state['past_steps'].append((state['current_plan'][0], result)) 
-        print("#### PAST STEPS AFTER SECOND STEP #####")
-        print(state['past_steps'])
     finally:
         await host.cleanup()
 

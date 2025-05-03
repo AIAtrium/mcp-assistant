@@ -192,7 +192,6 @@ class MCPHost:
         response = await self._create_claude_message(
             messages, available_tools, current_system_prompt, langfuse_session_id
         )
-        self._log_claude_response(response)
 
         # Process response and handle tool calls
         final_text = []
