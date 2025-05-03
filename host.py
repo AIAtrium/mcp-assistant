@@ -171,9 +171,7 @@ class MCPHost:
         self.tool_to_client_map = tool_to_client_map
         return tools, tool_to_client_map
 
-    async def process_query(self, query: str, system_prompt: str = None):
-        langfuse_session_id = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-
+    async def process_query(self, query: str, system_prompt: str = None, langfuse_session_id: str = None, state: Dict = None):
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
@@ -194,7 +192,6 @@ class MCPHost:
         response = await self._create_claude_message(
             messages, available_tools, current_system_prompt, langfuse_session_id
         )
-        print(f"response: {response}")
 
         # Process response and handle tool calls
         final_text = []
@@ -248,6 +245,10 @@ class MCPHost:
                     final_text.append(response.content[0].text)
                 break
 
+        # Add a line at the end, before returning the result
+        if state is not None and "tool_results" in state:
+            state["tool_results"].update(tool_results_context)
+        
         return "\n".join(final_text)
 
     async def _prepare_query(self, query: str) -> str:
@@ -516,6 +517,31 @@ class MCPHost:
         except Exception as e:
             print(f"Warning: Error during cleanup of {client_name}: {e}")
 
+    def _log_claude_response(self, response):
+        """Log detailed analysis of Claude's response including text outputs and tool calls."""
+        print("\n=== Initial Claude Response Analysis ===")
+        text_outputs = [c for c in response.content if c.type == "text"]
+        tool_calls = [c for c in response.content if c.type == "tool_use"]
+        
+        # Log text outputs
+        if text_outputs:
+            print(f"\n📝 Text Outputs ({len(text_outputs)}):")
+            for i, text in enumerate(text_outputs, 1):
+                print(f"  Output {i}: {text.text}")
+        
+        # Log tool calls
+        if tool_calls:
+            print(f"\n🔧 Tool Calls ({len(tool_calls)}):")
+            for i, tool in enumerate(tool_calls, 1):
+                print(f"\n  Tool {i}:")
+                print(f"    Name: {tool.name}")
+                print(f"    ID: {tool.id}")
+                print("    Input Arguments:")
+                for key, value in tool.input.items():
+                    print(f"      {key}: {value}")
+        
+        print("\n" + "="*40 + "\n")
+
 
 async def main():
     """
@@ -525,6 +551,7 @@ async def main():
     # variables
     DATE = datetime.today().strftime("%Y-%m-%d")
     NOTION_PAGE_TITLE = "Daily Briefings"
+    LANGFUSE_SESSION_ID = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
     # you can provide the model with background information about yourself to personalize its responses
     system_prompt = f"""
@@ -555,7 +582,7 @@ async def main():
         4) Tell me if I have any unread messages on whatsapp. You should search at least the last 10 message threads. If not, say "No unread messages on whatsapp"
         5) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
         """
-        result = await host.process_query(query)
+        result = await host.process_query(query, LANGFUSE_SESSION_ID)
         print(result)
     finally:
         await host.cleanup()
