@@ -105,9 +105,11 @@ class PlanExecAgent:
         # Return a Plan object instead of a list
         return Plan(steps=steps)
 
-    #TODO: look at the implemenation of create_react_agent
-    async def execute_step(self, state: State, step: str) -> str:
-        """Execute a single step from the plan using the MCP clients."""
+    async def execute_step(self, state: State) -> str:
+        """Execute the first step from the current plan using the MCP clients."""
+        
+        # Get the current step from the state
+        step = state["current_plan"][0]
         
         executor_system_prompt = f"""
         You are an execution agent tasked with carrying out a specific step in a plan.
@@ -355,6 +357,122 @@ class PlanExecAgent:
             cleaned_text = re.sub(r'\[Calling tool.*?\]', '', text)
             return cleaned_text.strip()
 
+    async def execute_plan(self, query: str, max_iterations: int = 25) -> str:
+        """
+        Execute a complete plan for the given query.
+        
+        This method orchestrates the entire plan-execute-replan cycle:
+        1. Creates an initial plan based on the query
+        2. Executes steps one by one
+        3. Replans after each step
+        4. Returns the final response when done
+        
+        Args:
+            query: The user's query to process
+            max_iterations: Maximum number of execution steps to run
+        
+        Returns:
+            The final response to the user's query
+        """
+        # Initialize state with values needed for the entire lifecycle
+        state = {
+            'input': query,
+            'langfuse_session_id': datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
+            'past_steps': [],
+            'current_plan': [],
+            'tool_results': {},
+            'initial_plan': [],
+            'response': ''
+        }
+        
+        # Step 1: Generate the initial plan
+        print(f"Generating initial plan for query: {query}")
+        plan = await self.initial_plan(state)
+        state['initial_plan'] = plan.steps
+        state['current_plan'] = plan.steps.copy()
+        print(f"Initial plan generated with {len(plan.steps)} steps")
+        
+        # Step 2-4: Execute steps, replan, and repeat
+        iteration = 0
+        
+        while iteration < max_iterations and state['current_plan']:
+            iteration += 1
+            print(f"\n==== Iteration {iteration}/{max_iterations} ====")
+            
+            # Execute the next step in the plan
+            current_step = state['current_plan'][0]
+            print(f"Executing step: {current_step}")
+            
+            result = await self.execute_step(state)
+            print(f"Step execution completed")
+            
+            # Update past_steps with the completed step and its result
+            state['past_steps'].append((current_step, result))
+            
+            # If we still have steps left or just completed the last one, replan
+            print("Replanning based on execution results")
+            replan_result = await self.replan(state)
+            
+            # Process the replanning result
+            if isinstance(replan_result.action, Response):
+                # We have a final response, we're done
+                print("Plan completed with final response")
+                state['response'] = replan_result.action.response
+                break
+            elif isinstance(replan_result.action, Plan):
+                # Update the entire plan with the new plan (not just removing completed step)
+                print(f"Plan updated, new step count: {len(replan_result.action.steps)}")
+                state['current_plan'] = replan_result.action.steps
+                
+                # If the updated plan is empty, we're done
+                if not state['current_plan']:
+                    print("Plan completed (no more steps)")
+                    # Generate a final response based on results
+                    final_response_prompt = f"""
+                    ## Objective:
+                    {query}
+                    
+                    ## Steps completed:
+                    """
+                    for i, (step, result) in enumerate(state['past_steps']):
+                        final_response_prompt += f"{i+1}. {step}\n   Result: {result}\n\n"
+                    
+                    final_response_prompt += "Please provide a final summary of what was accomplished."
+                    
+                    state['response'] = await self.mcp_host.process_query(
+                        final_response_prompt,
+                        langfuse_session_id=state['langfuse_session_id']
+                    )
+                    break
+        
+        # Check if we hit the iteration limit
+        if iteration >= max_iterations and state['current_plan']:
+            print(f"⚠️ Max iterations ({max_iterations}) reached without completing the plan")
+            
+            # Generate a partial response
+            incomplete_response_prompt = f"""
+            ## Objective:
+            {query}
+            
+            ## Steps completed ({iteration}/{max_iterations}, plan not completed):
+            """
+            for i, (step, result) in enumerate(state['past_steps']):
+                incomplete_response_prompt += f"{i+1}. {step}\n   Result: {result}\n\n"
+            
+            incomplete_response_prompt += f"## Remaining steps ({len(state['current_plan'])} steps):\n"
+            for i, step in enumerate(state['current_plan']):
+                incomplete_response_prompt += f"{i+1}. {step}\n"
+            
+            incomplete_response_prompt += "\nPlease provide a summary of progress made and what remains to be done."
+            
+            state['response'] = await self.mcp_host.process_query(
+                incomplete_response_prompt,
+                langfuse_session_id=state['langfuse_session_id']
+            )
+        
+        # Return the final response
+        return state['response']
+
 
 async def main():
     """
@@ -415,7 +533,7 @@ async def main():
         print(plan)
 
         print("####### EXECUTING STEP #######")
-        result = await host.execute_step(state, plan.steps[0])
+        result = await host.execute_step(state)
         print("####### STEP ONE RESULT #######")
         print(result)
         state['past_steps'] = [(plan.steps[0], result)]
@@ -433,7 +551,7 @@ async def main():
             exit(0)
         
         print("Checking second execution step")
-        result = await host.execute_step(state, state['current_plan'][0])
+        result = await host.execute_step(state)
         print("####### STEP TWO RESULT #######")
         print(result)
         
