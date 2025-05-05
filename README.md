@@ -8,6 +8,7 @@ This will generate a daily briefing from a sources. You do not need to install t
     - https://github.com/GongRzhe/Gmail-MCP-Server
     - https://github.com/makenotion/notion-mcp-server
     - https://github.com/exa-labs/exa-mcp-server
+    - https://github.com/ryaker/outlook-mcp
 3. Follow the instructions at https://github.com/nspady/google-calendar-mcp to set up OAuth for google
     1. enable Gmail and Google Calendar APIs on Google Cloud
     2. create an OAuth app for desktop
@@ -17,12 +18,18 @@ This will generate a daily briefing from a sources. You do not need to install t
 TLDR: Place the `gcp-oauth.keys.json` file into the root of **Gmail MCP Server** project OR run `mkdir -p ~/.gmail-mcp && mv gcp-oauth.keys.json ~/.gmail-mcp/`. Run `npm run auth` from the root of **Gmail-MCP-Server** to enable OAuth
 5. Follow the instructions at https://github.com/makenotion/notion-mcp-server to set up Notion access
 6. Get an [Exa API key here](https://dashboard.exa.ai/api-keys). 
-7. WhatsApp suppor - Follow the instructions at https://github.com/lharries/whatsapp-mcp to clone and install. This will require you to authenticate to Whatsapp at least once via QR code **in the terminal**
+7. WhatsApp support - Follow the instructions at https://github.com/lharries/whatsapp-mcp to clone and install. This will require you to authenticate to Whatsapp at least once via QR code **in the terminal**
     1. This requires a specific version of `golang`. If you have already installed go (i.e. with homebrew) and don't want to override it for fear of breaking some system dependcies, download `gvm` then use it to download the required version. You may need to configure your `$PATH` to account for different go versions via gvm
     2. This repo only has instructions to run via Claude Desktop but you can use the `uv` package manager to create a `.venv` inside the `whatsapp-mcp-server` directory and install the dependencies. These are different than the dependencies for this project. The `host` in this project will automatically activate the venv for you when you run this project
-    3. You will need to regularly run the `main.go` script to sync the latest messages into the sqlite DB. 
-8. (Optional) You may want to comment out code in the above repos that expose tools such as ones that enable delete of emails or notion pages
-9. Set the following enviroment variables in an `.env` file in the project root:
+    3. You will need to regularly run the `main.go` script to sync the latest messages into the sqlite DB.
+8. Outlook - you need to follow the instructions in the [README](https://github.com/AIAtrium/outlook-mcp) to set up the Azure app with the correct scopes. This is our fork of an [open source MCP server](https://github.com/ryaker/outlook-mcp), which we altered to prevent having the same tool names as the gmail MCP server and to make sure that the Azure token is refreshed automatically 
+Once that is done, do the following
+    1. run `npm start` in a terminal
+    2. open another terminal and run `npm run auth-server`
+    3. visit [http://localhost:3333/auth](http://localhost:3333/auth) to authenticate. This will create a `.outlook-mcp-tokens.json` file in your `$HOME` directory. Do NOT go to http://localhost:3333/auth/callback, it will error
+    *Note* you may have to reauthenticate
+9. (Optional) You may want to comment out code in the above repos that expose tools such as ones that enable delete of emails or notion pages. You may also want to grant less privileges (scopes) in Google Cloud and Azure
+10. Set the following enviroment variables in an `.env` file in the project root:
 ```
 ANTHROPIC_API_KEY=
 GCAL_MCP_SERVER_PATH=/path/to/google-calendar-mcp/build/index.js
@@ -33,6 +40,7 @@ WHATSAPP_MCP_SERVER_PATH=/path/to/whatsapp-mcp/whatsapp-mcp-server/main.py
 WHATSAPP_MCP_SERVER_VENV_PATH=/path/to/whatsapp-mcp/whatsapp-mcp-server/.venv
 EXA_API_KEY=
 EXA_MCP_SERVER_PATH=/path/to/exa-mcp-server/build/index.js
+OUTLOOK_MCP_SERVER_PATH=/path/to/outlook-mcp/index.js
 ```
 
 **Note** the unusual setup for the *Notion Token* under `OPENAPI_MCP_HEADERS`
@@ -43,12 +51,12 @@ LANGFUSE_SECRET_KEY=
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_HOST="https://cloud.langfuse.com"
 ```
-10. To utilize the default daily briefing flow, create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
+11. To utilize the default daily briefing flow, create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
 You can utilize other names, but update the `variables` at the top of `main` in `host.py`. 
-11. Update the `system_prompt` in `main` in `host.py` with a description of who you are and any extra information that will make the model's output better. 
-12. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `host.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
+12. Update the `system_prompt` in `main` in `plan_exec_agent.py` with a description of who you are and any extra information that will make the model's output better. 
+13. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `plan_exec_agent.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
 For example, if you want the briefing to also check a specific Notion page that has your tasks, the model can also do this
-13. run `python host.py` to create a daily briefing one time. 
+14. run `python plan_exec_agent.py` to create a daily briefing one time. 
 
 ## Future Work
 - More connectors
