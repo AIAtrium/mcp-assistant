@@ -13,6 +13,7 @@ from mcp_clients.gmail_client import GmailMCPClient
 from mcp_clients.notion_client import NotionMCPClient
 from mcp_clients.whatsapp_client import WhatsappMCPClient
 from mcp_clients.exa_client import ExaMCPClient
+from mcp_clients.outlook_client import OutlookMCPClient
 
 load_dotenv()
 
@@ -25,7 +26,8 @@ class MCPHost:
         self.notion_client = NotionMCPClient()
         self.whatsapp_client = WhatsappMCPClient()
         self.exa_client = ExaMCPClient()
-
+        self.outlook_client = OutlookMCPClient()
+        
         # Store system prompt as instance variable with a default
         self.system_prompt = default_system_prompt or "You are a helpful assistant."
 
@@ -36,6 +38,7 @@ class MCPHost:
             self.notion_client.name: self.notion_client,
             self.whatsapp_client.name: self.whatsapp_client,
             self.exa_client.name: self.exa_client,
+            self.outlook_client.name: self.outlook_client,
         }
 
         self.mcp_client_paths = {
@@ -44,6 +47,7 @@ class MCPHost:
             self.notion_client.name: os.getenv("NOTION_MCP_SERVER_PATH"),
             self.whatsapp_client.name: os.getenv("WHATSAPP_MCP_SERVER_PATH"),
             self.exa_client.name: os.getenv("EXA_MCP_SERVER_PATH"),
+            self.outlook_client.name: os.getenv("OUTLOOK_MCP_SERVER_PATH"),
         }
 
         # Map of tool names to client names
@@ -578,9 +582,8 @@ async def main():
         1) check my gmail, look for unread emails and tell me if any are high priority
         2) check my google calendar, look for events from today and give me a summary of the events. 
            - If I have a meeting with anyone, search the internet for that person and write a quick summary of them.
-        3) Go to the 'Development Board V2' Notion page, look for any 'Scheduled' or 'In progress' cards assigned to me and give me a quick summary of every ticket. 
-        4) Tell me if I have any unread messages on whatsapp. You should search at least the last 10 message threads. If not, say "No unread messages on whatsapp"
-        5) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
+        3) Go to my second email, which is my outlook account, and look for any unread emails. Write a summary of the unread emails.
+        4) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
         """
         result = await host.process_query(query, LANGFUSE_SESSION_ID)
         print(result)
