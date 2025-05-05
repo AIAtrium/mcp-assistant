@@ -8,7 +8,7 @@ This will generate a daily briefing from a sources. You do not need to install t
     - https://github.com/GongRzhe/Gmail-MCP-Server
     - https://github.com/makenotion/notion-mcp-server
     - https://github.com/exa-labs/exa-mcp-server
-    - https://github.com/ryaker/outlook-mcp
+    - https://github.com/AIAtrium/outlook-mcp
 3. Follow the instructions at https://github.com/nspady/google-calendar-mcp to set up OAuth for google
     1. enable Gmail and Google Calendar APIs on Google Cloud
     2. create an OAuth app for desktop
