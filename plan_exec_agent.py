@@ -39,8 +39,8 @@ class Act(BaseModel):
 
 
 class PlanExecAgent:
-    def __init__(self, default_system_prompt: str = None):
-        self.mcp_host = MCPHost(default_system_prompt)
+    def __init__(self, default_system_prompt: str = None, user_context: str = None):
+        self.mcp_host = MCPHost(default_system_prompt, user_context)
 
     async def initialize_mcp_clients(self):
         await self.mcp_host.initialize_mcp_clients()
@@ -53,13 +53,18 @@ class PlanExecAgent:
         """Generate an initial plan based on the user's query."""
         
         # hybrid of langgraph's prompt and our own
-        plan_system_prompt = """
+        plan_system_prompt = f"""
         You are a planning agent. Your task is to break down a complex query into a sequence of steps.
         Create a plan in the form of a list of steps that need to be executed to fulfill the user's request.
         The plan should be detailed enough that each step can be executed by a tool-using agent.
 
         Do not add any superfluous steps.
         The result of the final step should be the final answer. Make sure that each step has all the information needed - do not skip steps.
+
+        USER CONTEXT:
+        {self.mcp_host.user_context}
+
+        Use this context to inform your planning decisions. For example, prefer tools and approaches that align with the user's preferences and work environment.
         """
         
         plan_prompt = f"""
@@ -149,7 +154,7 @@ class PlanExecAgent:
         if tool_results is None:
             state["tool_results"] = {}
 
-        result = await self.mcp_host.process_query(
+        result = await self.mcp_host.process_input_with_agent_loop(
             execution_prompt, 
             system_prompt=executor_system_prompt,
             langfuse_session_id=state['langfuse_session_id'],
@@ -172,7 +177,7 @@ class PlanExecAgent:
         Returns:
             Act object with either a new Plan or a Response to the user
         """
-        replan_system_prompt = """
+        replan_system_prompt = f"""
         You are a planning agent. Your task is to revise an existing plan based on the results of steps that have already been executed.
         
         Evaluate whether:
@@ -184,6 +189,11 @@ class PlanExecAgent:
         Otherwise, use the submit_plan tool with an updated plan of remaining steps.
 
         Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
+
+        USER CONTEXT:
+        {self.mcp_host.user_context}
+
+        Use this context to inform your planning decisions. For example, prefer tools and approaches that align with the user's preferences and work environment.
         """
         
         # Create context for replanning
@@ -445,7 +455,7 @@ class PlanExecAgent:
                     
                     final_response_prompt += "Please provide a final summary of what was accomplished."
                     
-                    state['response'] = await self.mcp_host.process_query(
+                    state['response'] = await self.mcp_host.process_input_with_agent_loop(
                         final_response_prompt,
                         langfuse_session_id=state['langfuse_session_id']
                     )
@@ -471,7 +481,7 @@ class PlanExecAgent:
             
             incomplete_response_prompt += "\nPlease provide a summary of progress made and what remains to be done."
             
-            state['response'] = await self.mcp_host.process_query(
+            state['response'] = await self.mcp_host.process_input_with_agent_loop(
                 incomplete_response_prompt,
                 langfuse_session_id=state['langfuse_session_id']
             )
@@ -489,19 +499,21 @@ async def main():
     DATE = datetime.today().strftime("%Y-%m-%d")
     NOTION_PAGE_TITLE = "Daily Briefings"
 
-    # you can provide the model with background information about yourself to personalize its responses
-    system_prompt = f"""
-    You are a helpful assistant. 
+    user_context = """
     I am David, the CTO / Co-Founder of a pre-seed startup based in San Francisco. 
     I handle all the coding and product development.
     We are a two person team, with my co-founder handling sales, marketing, and business development.
     
     When looking at my calendar, if you see anything titled 'b', that means it's a blocker.
-    I often put blockers before or after calls that could go long.  
+    I often put blockers before or after calls that could go long.
+    """
+
+    base_system_prompt = f"""
+    You are a helpful assistant. 
     """
 
     # Initialize host with default system prompt
-    host = PlanExecAgent(default_system_prompt=system_prompt)
+    host = PlanExecAgent(default_system_prompt=base_system_prompt, user_context=user_context)
 
     try:
         await host.initialize_mcp_clients()

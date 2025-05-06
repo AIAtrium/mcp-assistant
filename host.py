@@ -20,7 +20,7 @@ load_dotenv()
 
 
 class MCPHost:
-    def __init__(self, default_system_prompt: str = None):
+    def __init__(self, default_system_prompt: str = None, user_context: str = None):
         self.anthropic = Anthropic()
         self.gcal_client = GCalMCPClient()
         self.gmail_client = GmailMCPClient()
@@ -30,8 +30,18 @@ class MCPHost:
         self.outlook_client = OutlookMCPClient()
         self.slack_client = SlackMCPClient()
         
+        # inject the user context into the system prompt if its provided
+        if default_system_prompt and user_context:
+            default_system_prompt = f"""
+            {default_system_prompt}
+            
+            USER CONTEXT:
+            {user_context}
+            """
+        
         # Store system prompt as instance variable with a default
         self.system_prompt = default_system_prompt or "You are a helpful assistant."
+        self.user_context = user_context if user_context else ""
 
         # manually add each eligible MCP clients here
         self.mcp_clients = {
@@ -179,7 +189,7 @@ class MCPHost:
         self.tool_to_client_map = tool_to_client_map
         return tools, tool_to_client_map
     @observe()
-    async def process_query(self, query: str, system_prompt: str = None, langfuse_session_id: str = None, state: Dict = None):
+    async def process_input_with_agent_loop(self, query: str, system_prompt: str = None, langfuse_session_id: str = None, state: Dict = None):
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
@@ -592,19 +602,21 @@ async def main():
     NOTION_PAGE_TITLE = "Daily Briefings"
     LANGFUSE_SESSION_ID = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
-    # you can provide the model with background information about yourself to personalize its responses
-    system_prompt = f"""
-    You are a helpful assistant. 
+    user_context = """
     I am David, the CTO / Co-Founder of a pre-seed startup based in San Francisco. 
     I handle all the coding and product development.
     We are a two person team, with my co-founder handling sales, marketing, and business development.
     
     When looking at my calendar, if you see anything titled 'b', that means it's a blocker.
-    I often put blockers before or after calls that could go long.  
+    I often put blockers before or after calls that could go long.
+    """
+
+    base_system_prompt = f"""
+    You are a helpful assistant. 
     """
 
     # Initialize host with default system prompt
-    host = MCPHost(default_system_prompt=system_prompt)
+    host = MCPHost(default_system_prompt=base_system_prompt, user_context=user_context)
 
     try:
         await host.initialize_mcp_clients()
@@ -620,7 +632,7 @@ async def main():
         3) Go to my second email, which is my outlook account, and look for any unread emails. Write a summary of the unread emails.
         4) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
         """
-        result = await host.process_query(query, LANGFUSE_SESSION_ID)
+        result = await host.process_input_with_agent_loop(query, LANGFUSE_SESSION_ID)
         print(result)
     finally:
         await host.cleanup()
