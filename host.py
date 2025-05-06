@@ -602,14 +602,14 @@ class MCPHost:
 async def main():
     """
     This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
-    Override these variables OR the `query` to customize the daily briefing to your liking.
+    Configuration can be customized in user_inputs.py, or will use defaults if not found.
     """
-    # variables
+    # NOTE: the are Default values you can override in user_inputs.py
     DATE = datetime.today().strftime("%Y-%m-%d")
     NOTION_PAGE_TITLE = "Daily Briefings"
     LANGFUSE_SESSION_ID = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-
-    user_context = """
+    
+    USER_CONTEXT = """
     I am David, the CTO / Co-Founder of a pre-seed startup based in San Francisco. 
     I handle all the coding and product development.
     We are a two person team, with my co-founder handling sales, marketing, and business development.
@@ -617,29 +617,47 @@ async def main():
     When looking at my calendar, if you see anything titled 'b', that means it's a blocker.
     I often put blockers before or after calls that could go long.
     """
-
-    base_system_prompt = f"""
-    You are a helpful assistant. 
+    
+    BASE_SYSTEM_PROMPT = """
+    You are a helpful assistant.
+    """
+    
+    QUERY = f"""
+    Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
+    Do the following:
+    1) check my gmail, look for unread emails and tell me if any are high priority
+    2) check my google calendar, look for events from today and give me a summary of the events. 
+    3) Go to my second email, which is my outlook account, and look for any unread emails. Write a summary of the unread emails.
+    4) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
     """
 
+    # Try to import user configurations, override defaults if found
+    try:
+        print("Loading values from user_inputs.py")
+        import user_inputs
+        # Override each value individually if it exists in user_inputs
+        if hasattr(user_inputs, 'QUERY'):
+            QUERY = user_inputs.QUERY
+        if hasattr(user_inputs, 'BASE_SYSTEM_PROMPT'):
+            BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
+        if hasattr(user_inputs, 'USER_CONTEXT'):
+            USER_CONTEXT = user_inputs.USER_CONTEXT
+        if hasattr(user_inputs, 'DATE'):
+            DATE = user_inputs.DATE
+        if hasattr(user_inputs, 'NOTION_PAGE_TITLE'):
+            NOTION_PAGE_TITLE = user_inputs.NOTION_PAGE_TITLE
+    except ImportError:
+        print("Unable to load values from user_inputs.py found, using default values")
+
     # Initialize host with default system prompt
-    host = MCPHost(default_system_prompt=base_system_prompt, user_context=user_context)
+    host = MCPHost(
+        default_system_prompt=BASE_SYSTEM_PROMPT,
+        user_context=USER_CONTEXT
+    )
 
     try:
         await host.initialize_mcp_clients()
-
-        # can override the query to customize the daily briefing to your liking
-        # NOTE: provide the model with step by step instructions for best results
-        query = f"""
-        Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
-        Do the following:
-        1) check my gmail, look for unread emails and tell me if any are high priority
-        2) check my google calendar, look for events from today and give me a summary of the events. 
-           - If I have a meeting with anyone, search the internet for that person and write a quick summary of them.
-        3) Go to my second email, which is my outlook account, and look for any unread emails. Write a summary of the unread emails.
-        4) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
-        """
-        result = await host.process_input_with_agent_loop(query, LANGFUSE_SESSION_ID)
+        result = await host.process_input_with_agent_loop(QUERY, LANGFUSE_SESSION_ID)
         print(result)
     finally:
         await host.cleanup()
