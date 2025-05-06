@@ -41,6 +41,8 @@ WHATSAPP_MCP_SERVER_VENV_PATH=/path/to/whatsapp-mcp/whatsapp-mcp-server/.venv
 EXA_API_KEY=
 EXA_MCP_SERVER_PATH=/path/to/exa-mcp-server/build/index.js
 OUTLOOK_MCP_SERVER_PATH=/path/to/outlook-mcp/index.js
+MS_CLIENT_ID=
+MS_CLIENT_SECRET
 ```
 
 **Note** the unusual setup for the *Notion Token* under `OPENAPI_MCP_HEADERS`
