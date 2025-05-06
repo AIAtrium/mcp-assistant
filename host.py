@@ -642,10 +642,6 @@ async def main():
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
         if hasattr(user_inputs, 'USER_CONTEXT'):
             USER_CONTEXT = user_inputs.USER_CONTEXT
-        if hasattr(user_inputs, 'DATE'):
-            DATE = user_inputs.DATE
-        if hasattr(user_inputs, 'NOTION_PAGE_TITLE'):
-            NOTION_PAGE_TITLE = user_inputs.NOTION_PAGE_TITLE
     except ImportError:
         print("Unable to load values from user_inputs.py found, using default values")
 
@@ -657,7 +653,7 @@ async def main():
 
     try:
         await host.initialize_mcp_clients()
-        result = await host.process_input_with_agent_loop(QUERY, LANGFUSE_SESSION_ID)
+        result = await host.process_input_with_agent_loop(QUERY, langfuse_session_id=LANGFUSE_SESSION_ID)
         print(result)
     finally:
         await host.cleanup()
