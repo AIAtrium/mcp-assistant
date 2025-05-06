@@ -178,12 +178,17 @@ class MCPHost:
         # Store the map in the class for later use
         self.tool_to_client_map = tool_to_client_map
         return tools, tool_to_client_map
-
+    @observe()
     async def process_query(self, query: str, system_prompt: str = None, langfuse_session_id: str = None, state: Dict = None):
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
         )
+
+        # Set the observation name to include the current step if available
+        if state and "current_plan" in state and state["current_plan"]:
+            current_step = state["current_plan"][0]
+            langfuse_context.update_current_observation(name=f"{current_step}")
 
         # Prepare query with available resources information
         enriched_query = await self._prepare_query(query)
@@ -229,6 +234,7 @@ class MCPHost:
                         messages,
                         tool_results_context,
                         final_text,
+                        langfuse_session_id,
                     )
 
                     # Update conversation context
@@ -264,12 +270,19 @@ class MCPHost:
         resources_info = await self.get_all_resources_info()
         return query + "\n\n" + resources_info
 
-    @observe()
+    @observe(as_type="generation")
     async def _create_claude_message(
         self, messages, available_tools, system_prompt=None, langfuse_session_id=None
     ):
         """Create a message using Claude API with the given messages and tools."""
         system = system_prompt if system_prompt is not None else self.system_prompt
+
+        # Add langfuse input tracking
+        langfuse_context.update_current_observation(
+            input=messages,
+            model="claude-3-5-sonnet-20241022",
+            session_id=langfuse_session_id
+        )
 
         response = self.anthropic.messages.create(
             model="claude-3-5-sonnet-20241022",
@@ -283,9 +296,19 @@ class MCPHost:
         if langfuse_session_id:
             langfuse_context.update_current_trace(session_id=langfuse_session_id)
             langfuse_context.flush()
+        
+         # Add cost tracking
+        langfuse_context.update_current_observation(
+            usage_details={
+                "input": response.usage.input_tokens,
+                "output": response.usage.output_tokens,
+                "cache_read_input_tokens": response.usage.cache_read_input_tokens
+            }
+        )
 
         return response
 
+    @observe(as_type="tool")
     async def _process_tool_call(
         self,
         tool_name,
@@ -296,8 +319,16 @@ class MCPHost:
         messages,
         tool_results_context,
         final_text,
+        langfuse_session_id,
     ):
         """Process a specific tool call and return updated messages and result content."""
+
+        # Add langfuse tracking
+        if langfuse_session_id:
+            langfuse_context.update_current_observation(name=tool_name)
+            langfuse_context.update_current_trace(session_id=langfuse_session_id)
+            langfuse_context.flush()
+  
         if tool_name == "reference_tool_output":
             return await self._handle_reference_tool(
                 tool_id,
