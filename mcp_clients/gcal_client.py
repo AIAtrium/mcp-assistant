@@ -39,7 +39,9 @@ class GCalMCPClient(MCPClient):
         # List available tools
         response = await self.session.list_tools()
         tools = response.tools
-        print(f"\nConnected to server {self.name} with tools: {[tool.name for tool in tools]}")
+        print(
+            f"\nConnected to server {self.name} with tools: {[tool.name for tool in tools]}"
+        )
 
     async def cleanup(self):
         """Clean up resources"""

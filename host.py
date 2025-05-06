@@ -29,7 +29,7 @@ class MCPHost:
         self.exa_client = ExaMCPClient()
         self.outlook_client = OutlookMCPClient()
         self.slack_client = SlackMCPClient()
-        
+
         # inject the user context into the system prompt if its provided
         if default_system_prompt and user_context:
             default_system_prompt = f"""
@@ -38,7 +38,7 @@ class MCPHost:
             USER CONTEXT:
             {user_context}
             """
-        
+
         # Store system prompt as instance variable with a default
         self.system_prompt = default_system_prompt or "You are a helpful assistant."
         self.user_context = user_context if user_context else ""
@@ -188,8 +188,15 @@ class MCPHost:
         # Store the map in the class for later use
         self.tool_to_client_map = tool_to_client_map
         return tools, tool_to_client_map
+
     @observe()
-    async def process_input_with_agent_loop(self, query: str, system_prompt: str = None, langfuse_session_id: str = None, state: Dict = None):
+    async def process_input_with_agent_loop(
+        self,
+        query: str,
+        system_prompt: str = None,
+        langfuse_session_id: str = None,
+        state: Dict = None,
+    ):
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
@@ -272,7 +279,7 @@ class MCPHost:
         # Add a line at the end, before returning the result
         if state is not None and "tool_results" in state:
             state["tool_results"].update(tool_results_context)
-        
+
         return "\n".join(final_text)
 
     async def _prepare_query(self, query: str) -> str:
@@ -291,7 +298,7 @@ class MCPHost:
         langfuse_context.update_current_observation(
             input=messages,
             model="claude-3-5-sonnet-20241022",
-            session_id=langfuse_session_id
+            session_id=langfuse_session_id,
         )
 
         response = self.anthropic.messages.create(
@@ -306,13 +313,13 @@ class MCPHost:
         if langfuse_session_id:
             langfuse_context.update_current_trace(session_id=langfuse_session_id)
             langfuse_context.flush()
-        
+
             # Add cost tracking
             langfuse_context.update_current_observation(
                 usage_details={
                     "input": response.usage.input_tokens,
                     "output": response.usage.output_tokens,
-                    "cache_read_input_tokens": response.usage.cache_read_input_tokens
+                    "cache_read_input_tokens": response.usage.cache_read_input_tokens,
                 }
             )
 
@@ -338,7 +345,7 @@ class MCPHost:
             langfuse_context.update_current_observation(name=tool_name)
             langfuse_context.update_current_trace(session_id=langfuse_session_id)
             langfuse_context.flush()
-  
+
         if tool_name == "reference_tool_output":
             return await self._handle_reference_tool(
                 tool_id,
@@ -571,13 +578,13 @@ class MCPHost:
         print("\n=== Initial Claude Response Analysis ===")
         text_outputs = [c for c in response.content if c.type == "text"]
         tool_calls = [c for c in response.content if c.type == "tool_use"]
-        
+
         # Log text outputs
         if text_outputs:
             print(f"\n📝 Text Outputs ({len(text_outputs)}):")
             for i, text in enumerate(text_outputs, 1):
                 print(f"  Output {i}: {text.text}")
-        
+
         # Log tool calls
         if tool_calls:
             print(f"\n🔧 Tool Calls ({len(tool_calls)}):")
@@ -588,8 +595,8 @@ class MCPHost:
                 print("    Input Arguments:")
                 for key, value in tool.input.items():
                     print(f"      {key}: {value}")
-        
-        print("\n" + "="*40 + "\n")
+
+        print("\n" + "=" * 40 + "\n")
 
 
 async def main():
