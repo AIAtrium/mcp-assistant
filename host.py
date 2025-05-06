@@ -18,41 +18,70 @@ from mcp_clients.slack_client import SlackMCPClient
 
 load_dotenv()
 
+# Add a new constant for default clients
+DEFAULT_CLIENTS = [
+    "Google Calendar",
+    "Gmail", 
+    "Notion",
+    "Whatsapp",
+    "Exa",
+    "Outlook",
+    "Slack"
+]
 
 class MCPHost:
-    def __init__(self, default_system_prompt: str = None):
+    def __init__(self, default_system_prompt: str = None, user_context: str = None, enabled_clients: List[str] = None):
         self.anthropic = Anthropic()
-        self.gcal_client = GCalMCPClient()
-        self.gmail_client = GmailMCPClient()
-        self.notion_client = NotionMCPClient()
-        self.whatsapp_client = WhatsappMCPClient()
-        self.exa_client = ExaMCPClient()
-        self.outlook_client = OutlookMCPClient()
-        self.slack_client = SlackMCPClient()
         
+        # Initialize all client instances but don't use them unless enabled
+        self._all_clients = {
+            "Google Calendar": GCalMCPClient(),
+            "Gmail": GmailMCPClient(),
+            "Notion": NotionMCPClient(),
+            "Whatsapp": WhatsappMCPClient(),
+            "Exa": ExaMCPClient(),
+            "Outlook": OutlookMCPClient(),
+            "Slack": SlackMCPClient()
+        }
+
+        # Use either user-specified clients or all clients by default
+        self.enabled_clients = enabled_clients or DEFAULT_CLIENTS
+        
+        # Only include enabled clients in the active clients dict
+        self.mcp_clients = {
+            name: client 
+            for name, client in self._all_clients.items() 
+            if name in self.enabled_clients
+        }
+
+        # Only include paths for enabled clients
+        self.mcp_client_paths = {
+            "Google Calendar": os.getenv("GCAL_MCP_SERVER_PATH"),
+            "Gmail": os.getenv("GMAIL_MCP_SERVER_PATH"),
+            "Notion": os.getenv("NOTION_MCP_SERVER_PATH"),
+            "Whatsapp": os.getenv("WHATSAPP_MCP_SERVER_PATH"),
+            "Exa": os.getenv("EXA_MCP_SERVER_PATH"),
+            "Outlook": os.getenv("OUTLOOK_MCP_SERVER_PATH"),
+            "Slack": os.getenv("SLACK_MCP_SERVER_PATH")
+        }
+        self.mcp_client_paths = {
+            name: path 
+            for name, path in self.mcp_client_paths.items() 
+            if name in self.enabled_clients
+        }
+
+        # inject the user context into the system prompt if its provided
+        if default_system_prompt and user_context:
+            default_system_prompt = f"""
+            {default_system_prompt}
+            
+            USER CONTEXT:
+            {user_context}
+            """
+
         # Store system prompt as instance variable with a default
         self.system_prompt = default_system_prompt or "You are a helpful assistant."
-
-        # manually add each eligible MCP clients here
-        self.mcp_clients = {
-            self.gcal_client.name: self.gcal_client,
-            self.gmail_client.name: self.gmail_client,
-            self.notion_client.name: self.notion_client,
-            self.whatsapp_client.name: self.whatsapp_client,
-            self.exa_client.name: self.exa_client,
-            self.outlook_client.name: self.outlook_client,
-            self.slack_client.name: self.slack_client,
-        }
-
-        self.mcp_client_paths = {
-            self.gcal_client.name: os.getenv("GCAL_MCP_SERVER_PATH"),
-            self.gmail_client.name: os.getenv("GMAIL_MCP_SERVER_PATH"),
-            self.notion_client.name: os.getenv("NOTION_MCP_SERVER_PATH"),
-            self.whatsapp_client.name: os.getenv("WHATSAPP_MCP_SERVER_PATH"),
-            self.exa_client.name: os.getenv("EXA_MCP_SERVER_PATH"),
-            self.outlook_client.name: os.getenv("OUTLOOK_MCP_SERVER_PATH"),
-            self.slack_client.name: os.getenv("SLACK_MCP_SERVER_PATH"),
-        }
+        self.user_context = user_context if user_context else ""
 
         # Map of tool names to client names
         self.tool_to_client_map: Dict[str, str] = {}
@@ -178,8 +207,15 @@ class MCPHost:
         # Store the map in the class for later use
         self.tool_to_client_map = tool_to_client_map
         return tools, tool_to_client_map
+
     @observe()
-    async def process_query(self, query: str, system_prompt: str = None, langfuse_session_id: str = None, state: Dict = None):
+    async def process_input_with_agent_loop(
+        self,
+        query: str,
+        system_prompt: str = None,
+        langfuse_session_id: str = None,
+        state: Dict = None,
+    ):
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
@@ -262,7 +298,7 @@ class MCPHost:
         # Add a line at the end, before returning the result
         if state is not None and "tool_results" in state:
             state["tool_results"].update(tool_results_context)
-        
+
         return "\n".join(final_text)
 
     async def _prepare_query(self, query: str) -> str:
@@ -281,7 +317,7 @@ class MCPHost:
         langfuse_context.update_current_observation(
             input=messages,
             model="claude-3-5-sonnet-20241022",
-            session_id=langfuse_session_id
+            session_id=langfuse_session_id,
         )
 
         response = self.anthropic.messages.create(
@@ -296,13 +332,13 @@ class MCPHost:
         if langfuse_session_id:
             langfuse_context.update_current_trace(session_id=langfuse_session_id)
             langfuse_context.flush()
-        
+
             # Add cost tracking
             langfuse_context.update_current_observation(
                 usage_details={
                     "input": response.usage.input_tokens,
                     "output": response.usage.output_tokens,
-                    "cache_read_input_tokens": response.usage.cache_read_input_tokens
+                    "cache_read_input_tokens": response.usage.cache_read_input_tokens,
                 }
             )
 
@@ -328,7 +364,7 @@ class MCPHost:
             langfuse_context.update_current_observation(name=tool_name)
             langfuse_context.update_current_trace(session_id=langfuse_session_id)
             langfuse_context.flush()
-  
+
         if tool_name == "reference_tool_output":
             return await self._handle_reference_tool(
                 tool_id,
@@ -561,13 +597,13 @@ class MCPHost:
         print("\n=== Initial Claude Response Analysis ===")
         text_outputs = [c for c in response.content if c.type == "text"]
         tool_calls = [c for c in response.content if c.type == "tool_use"]
-        
+
         # Log text outputs
         if text_outputs:
             print(f"\n📝 Text Outputs ({len(text_outputs)}):")
             for i, text in enumerate(text_outputs, 1):
                 print(f"  Output {i}: {text.text}")
-        
+
         # Log tool calls
         if tool_calls:
             print(f"\n🔧 Tool Calls ({len(tool_calls)}):")
@@ -578,49 +614,72 @@ class MCPHost:
                 print("    Input Arguments:")
                 for key, value in tool.input.items():
                     print(f"      {key}: {value}")
-        
-        print("\n" + "="*40 + "\n")
+
+        print("\n" + "=" * 40 + "\n")
 
 
 async def main():
     """
     This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
-    Override these variables OR the `query` to customize the daily briefing to your liking.
+    Configuration can be customized in user_inputs.py, or will use defaults if not found.
     """
-    # variables
+    # NOTE: the are Default values you can override in user_inputs.py
     DATE = datetime.today().strftime("%Y-%m-%d")
     NOTION_PAGE_TITLE = "Daily Briefings"
     LANGFUSE_SESSION_ID = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-
-    # you can provide the model with background information about yourself to personalize its responses
-    system_prompt = f"""
-    You are a helpful assistant. 
+    
+    USER_CONTEXT = """
     I am David, the CTO / Co-Founder of a pre-seed startup based in San Francisco. 
     I handle all the coding and product development.
     We are a two person team, with my co-founder handling sales, marketing, and business development.
     
     When looking at my calendar, if you see anything titled 'b', that means it's a blocker.
-    I often put blockers before or after calls that could go long.  
+    I often put blockers before or after calls that could go long.
+    """
+    
+    BASE_SYSTEM_PROMPT = """
+    You are a helpful assistant.
+    """
+    
+    QUERY = f"""
+    Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
+    Do the following:
+    1) check my gmail, look for unread emails and tell me if any are high priority
+    2) check my google calendar, look for events from today and give me a summary of the events. 
+    3) Go to my second email, which is my outlook account, and look for any unread emails. Write a summary of the unread emails.
+    4) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
     """
 
-    # Initialize host with default system prompt
-    host = MCPHost(default_system_prompt=system_prompt)
+    # Try to import user configurations, override defaults if found
+    try:
+        print("Loading values from user_inputs.py")
+        import user_inputs
+        # Override each value individually if it exists in user_inputs
+        if hasattr(user_inputs, 'QUERY'):
+            QUERY = user_inputs.QUERY
+        if hasattr(user_inputs, 'BASE_SYSTEM_PROMPT'):
+            BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
+        if hasattr(user_inputs, 'USER_CONTEXT'):
+            USER_CONTEXT = user_inputs.USER_CONTEXT
+        if hasattr(user_inputs, 'ENABLED_CLIENTS'):
+            ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
+            print(f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n")
+        else:
+            ENABLED_CLIENTS = None
+    except ImportError:
+        print("Unable to load values from user_inputs.py found, using default values")
+        ENABLED_CLIENTS = None
+
+    # Initialize host with default system prompt and enabled clients
+    host = MCPHost(
+        default_system_prompt=BASE_SYSTEM_PROMPT,
+        user_context=USER_CONTEXT,
+        enabled_clients=ENABLED_CLIENTS
+    )
 
     try:
         await host.initialize_mcp_clients()
-
-        # can override the query to customize the daily briefing to your liking
-        # NOTE: provide the model with step by step instructions for best results
-        query = f"""
-        Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
-        Do the following:
-        1) check my gmail, look for unread emails and tell me if any are high priority
-        2) check my google calendar, look for events from today and give me a summary of the events. 
-           - If I have a meeting with anyone, search the internet for that person and write a quick summary of them.
-        3) Go to my second email, which is my outlook account, and look for any unread emails. Write a summary of the unread emails.
-        4) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
-        """
-        result = await host.process_query(query, LANGFUSE_SESSION_ID)
+        result = await host.process_input_with_agent_loop(QUERY, langfuse_session_id=LANGFUSE_SESSION_ID)
         print(result)
     finally:
         await host.cleanup()

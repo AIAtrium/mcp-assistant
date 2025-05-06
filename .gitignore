@@ -2,4 +2,4 @@
 .env
 __pycache__
 .ruff_cache
-prompts.txt
+user_inputs.py
