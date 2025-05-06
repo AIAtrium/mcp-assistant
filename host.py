@@ -297,14 +297,14 @@ class MCPHost:
             langfuse_context.update_current_trace(session_id=langfuse_session_id)
             langfuse_context.flush()
         
-         # Add cost tracking
-        langfuse_context.update_current_observation(
-            usage_details={
-                "input": response.usage.input_tokens,
-                "output": response.usage.output_tokens,
-                "cache_read_input_tokens": response.usage.cache_read_input_tokens
-            }
-        )
+            # Add cost tracking
+            langfuse_context.update_current_observation(
+                usage_details={
+                    "input": response.usage.input_tokens,
+                    "output": response.usage.output_tokens,
+                    "cache_read_input_tokens": response.usage.cache_read_input_tokens
+                }
+            )
 
         return response
 
