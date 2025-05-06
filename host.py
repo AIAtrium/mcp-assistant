@@ -18,17 +18,57 @@ from mcp_clients.slack_client import SlackMCPClient
 
 load_dotenv()
 
+# Add a new constant for default clients
+DEFAULT_CLIENTS = [
+    "Google Calendar",
+    "Gmail", 
+    "Notion",
+    "Whatsapp",
+    "Exa",
+    "Outlook",
+    "Slack"
+]
 
 class MCPHost:
-    def __init__(self, default_system_prompt: str = None, user_context: str = None):
+    def __init__(self, default_system_prompt: str = None, user_context: str = None, enabled_clients: List[str] = None):
         self.anthropic = Anthropic()
-        self.gcal_client = GCalMCPClient()
-        self.gmail_client = GmailMCPClient()
-        self.notion_client = NotionMCPClient()
-        self.whatsapp_client = WhatsappMCPClient()
-        self.exa_client = ExaMCPClient()
-        self.outlook_client = OutlookMCPClient()
-        self.slack_client = SlackMCPClient()
+        
+        # Initialize all client instances but don't use them unless enabled
+        self._all_clients = {
+            "Google Calendar": GCalMCPClient(),
+            "Gmail": GmailMCPClient(),
+            "Notion": NotionMCPClient(),
+            "Whatsapp": WhatsappMCPClient(),
+            "Exa": ExaMCPClient(),
+            "Outlook": OutlookMCPClient(),
+            "Slack": SlackMCPClient()
+        }
+
+        # Use either user-specified clients or all clients by default
+        self.enabled_clients = enabled_clients or DEFAULT_CLIENTS
+        
+        # Only include enabled clients in the active clients dict
+        self.mcp_clients = {
+            name: client 
+            for name, client in self._all_clients.items() 
+            if name in self.enabled_clients
+        }
+
+        # Only include paths for enabled clients
+        self.mcp_client_paths = {
+            "Google Calendar": os.getenv("GCAL_MCP_SERVER_PATH"),
+            "Gmail": os.getenv("GMAIL_MCP_SERVER_PATH"),
+            "Notion": os.getenv("NOTION_MCP_SERVER_PATH"),
+            "Whatsapp": os.getenv("WHATSAPP_MCP_SERVER_PATH"),
+            "Exa": os.getenv("EXA_MCP_SERVER_PATH"),
+            "Outlook": os.getenv("OUTLOOK_MCP_SERVER_PATH"),
+            "Slack": os.getenv("SLACK_MCP_SERVER_PATH")
+        }
+        self.mcp_client_paths = {
+            name: path 
+            for name, path in self.mcp_client_paths.items() 
+            if name in self.enabled_clients
+        }
 
         # inject the user context into the system prompt if its provided
         if default_system_prompt and user_context:
@@ -42,27 +82,6 @@ class MCPHost:
         # Store system prompt as instance variable with a default
         self.system_prompt = default_system_prompt or "You are a helpful assistant."
         self.user_context = user_context if user_context else ""
-
-        # manually add each eligible MCP clients here
-        self.mcp_clients = {
-            self.gcal_client.name: self.gcal_client,
-            self.gmail_client.name: self.gmail_client,
-            self.notion_client.name: self.notion_client,
-            self.whatsapp_client.name: self.whatsapp_client,
-            self.exa_client.name: self.exa_client,
-            self.outlook_client.name: self.outlook_client,
-            self.slack_client.name: self.slack_client,
-        }
-
-        self.mcp_client_paths = {
-            self.gcal_client.name: os.getenv("GCAL_MCP_SERVER_PATH"),
-            self.gmail_client.name: os.getenv("GMAIL_MCP_SERVER_PATH"),
-            self.notion_client.name: os.getenv("NOTION_MCP_SERVER_PATH"),
-            self.whatsapp_client.name: os.getenv("WHATSAPP_MCP_SERVER_PATH"),
-            self.exa_client.name: os.getenv("EXA_MCP_SERVER_PATH"),
-            self.outlook_client.name: os.getenv("OUTLOOK_MCP_SERVER_PATH"),
-            self.slack_client.name: os.getenv("SLACK_MCP_SERVER_PATH"),
-        }
 
         # Map of tool names to client names
         self.tool_to_client_map: Dict[str, str] = {}
@@ -642,13 +661,20 @@ async def main():
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
         if hasattr(user_inputs, 'USER_CONTEXT'):
             USER_CONTEXT = user_inputs.USER_CONTEXT
+        if hasattr(user_inputs, 'ENABLED_CLIENTS'):
+            ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
+            print(f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n")
+        else:
+            ENABLED_CLIENTS = None
     except ImportError:
         print("Unable to load values from user_inputs.py found, using default values")
+        ENABLED_CLIENTS = None
 
-    # Initialize host with default system prompt
+    # Initialize host with default system prompt and enabled clients
     host = MCPHost(
         default_system_prompt=BASE_SYSTEM_PROMPT,
-        user_context=USER_CONTEXT
+        user_context=USER_CONTEXT,
+        enabled_clients=ENABLED_CLIENTS
     )
 
     try:

@@ -42,14 +42,11 @@ class Act(BaseModel):
 
 
 class PlanExecAgent:
-    def __init__(self, default_system_prompt: str = None, user_context: str = None):
-        self.mcp_host = MCPHost(default_system_prompt, user_context)
+    def __init__(self, default_system_prompt: str = None, user_context: str = None, enabled_clients: List[str] = None):
+        self.mcp_host = MCPHost(default_system_prompt, user_context, enabled_clients)
 
     async def initialize_mcp_clients(self):
         await self.mcp_host.initialize_mcp_clients()
-
-        # NOTE: can remove this if we are recyling mcp_host.process_query
-        await self.mcp_host.get_all_tools_from_servers()
 
     @observe()
     async def initial_plan(self, state: State) -> Plan:
@@ -579,13 +576,19 @@ async def main():
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
         if hasattr(user_inputs, 'USER_CONTEXT'):
             USER_CONTEXT = user_inputs.USER_CONTEXT
+        if hasattr(user_inputs, 'ENABLED_CLIENTS'):
+            ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
+            print(f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n")
+        else:
+            ENABLED_CLIENTS = None
     except ImportError:
         print("Unable to load values from user_inputs.py found, using default values")
 
     # Initialize host with system prompt and user context
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
-        user_context=USER_CONTEXT
+        user_context=USER_CONTEXT,
+        enabled_clients=ENABLED_CLIENTS
     )
 
     try:
