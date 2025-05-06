@@ -31,7 +31,7 @@ Once that is done, do the following
     2. open another terminal and run `npm run auth-server`
     3. visit [http://localhost:3333/auth](http://localhost:3333/auth) to authenticate. This will create a `.outlook-mcp-tokens.json` file in your `$HOME` directory. Do NOT go to http://localhost:3333/auth/callback, it will error
     *Note* you may have to reauthenticate
-9. Get the Slack User Token, follow the instructions at https://github.com/AIAtrium/slack-mcp-server to configure the scope correctly.
+9. Get the Slack User Token, follow the instructions at https://github.com/AIAtrium/slack-mcp-server to configure the scope correctly. Then you must manually add the bot to each public, private and DM channel you want it to have access to using `/invite @your-bot-name`
 10. (Optional) You may want to comment out code in the above repos that expose tools such as ones that enable delete of emails or notion pages. You may also want to grant less privileges (scopes) in Google Cloud and Azure
 11. Set the following enviroment variables in an `.env` file in the project root:
 ```
