@@ -1,7 +1,9 @@
 # Daily Briefing MCP Agent
-This will generate a daily briefing from a sources. You do not need to install them all, the code will run without them all installed but their tools will not be accessible. The instructions for all of them are below. 
+
+This will generate a daily briefing from a sources. You do not need to install them all, the code will run without them all installed but their tools will not be accessible. The instructions for all of them are below.
 
 ## How to install and run
+
 1. `pip install -r requirements.txt`
 2. You need to `git  clone` the following repos and run `npm install` in all the project roots
     - https://github.com/nspady/google-calendar-mcp
@@ -9,13 +11,14 @@ This will generate a daily briefing from a sources. You do not need to install t
     - https://github.com/makenotion/notion-mcp-server
     - https://github.com/exa-labs/exa-mcp-server
     - https://github.com/AIAtrium/outlook-mcp
+    - https://github.com/AIAtrium/slack-mcp-server
 3. Follow the instructions at https://github.com/nspady/google-calendar-mcp to set up OAuth for google
-    1. enable Gmail and Google Calendar APIs on Google Cloud
-    2. create an OAuth app for desktop
-    3. download the JSON credentials and change the name to `gcp-oauth.keys.json`, then copy it to the root of both the gmail and gcal projects from above
-    4. run `npm run auth` from the root of `google-calendar-mcp` to set up OAuth access 
-4. For the **Gmail MCP Server** follow the instructions in the README under *"2. Run Authentication"*  
-TLDR: Place the `gcp-oauth.keys.json` file into the root of **Gmail MCP Server** project OR run `mkdir -p ~/.gmail-mcp && mv gcp-oauth.keys.json ~/.gmail-mcp/`. Run `npm run auth` from the root of **Gmail-MCP-Server** to enable OAuth
+   1. enable Gmail and Google Calendar APIs on Google Cloud
+   2. create an OAuth app for desktop
+   3. download the JSON credentials and change the name to `gcp-oauth.keys.json`, then copy it to the root of both the gmail and gcal projects from above
+   4. run `npm run auth` from the root of `google-calendar-mcp` to set up OAuth access
+4. For the **Gmail MCP Server** follow the instructions in the README under _"2. Run Authentication"_  
+   TLDR: Place the `gcp-oauth.keys.json` file into the root of **Gmail MCP Server** project OR run `mkdir -p ~/.gmail-mcp && mv gcp-oauth.keys.json ~/.gmail-mcp/`. Run `npm run auth` from the root of **Gmail-MCP-Server** to enable OAuth
 5. Follow the instructions at https://github.com/makenotion/notion-mcp-server to set up Notion access
 6. Get an [Exa API key here](https://dashboard.exa.ai/api-keys). 
 7. WhatsApp support - Follow the instructions at https://github.com/lharries/whatsapp-mcp to clone and install. This will require you to authenticate to Whatsapp at least once via QR code **in the terminal**
@@ -28,8 +31,9 @@ Once that is done, do the following
     2. open another terminal and run `npm run auth-server`
     3. visit [http://localhost:3333/auth](http://localhost:3333/auth) to authenticate. This will create a `.outlook-mcp-tokens.json` file in your `$HOME` directory. Do NOT go to http://localhost:3333/auth/callback, it will error
     *Note* you may have to reauthenticate
-9. (Optional) You may want to comment out code in the above repos that expose tools such as ones that enable delete of emails or notion pages. You may also want to grant less privileges (scopes) in Google Cloud and Azure
-10. Set the following enviroment variables in an `.env` file in the project root:
+9. Get the Slack User Token, follow the instructions at https://github.com/AIAtrium/slack-mcp-server to configure the scope correctly.
+10. (Optional) You may want to comment out code in the above repos that expose tools such as ones that enable delete of emails or notion pages. You may also want to grant less privileges (scopes) in Google Cloud and Azure
+11. Set the following enviroment variables in an `.env` file in the project root:
 ```
 ANTHROPIC_API_KEY=
 GCAL_MCP_SERVER_PATH=/path/to/google-calendar-mcp/build/index.js
@@ -42,24 +46,28 @@ EXA_API_KEY=
 EXA_MCP_SERVER_PATH=/path/to/exa-mcp-server/build/index.js
 OUTLOOK_MCP_SERVER_PATH=/path/to/outlook-mcp/index.js
 MS_CLIENT_ID=
-MS_CLIENT_SECRET
+MS_CLIENT_SECRET=
+SLACK_MCP_SERVER_PATH=/path/to/slack-mcp-server/dist/index.js
+SLACK_USER_TOKEN=
 ```
 
-**Note** the unusual setup for the *Notion Token* under `OPENAPI_MCP_HEADERS`
+**Note** the unusual setup for the _Notion Token_ under `OPENAPI_MCP_HEADERS`
 
 If you want observability and tracing, set these environmen variables too
+
 ```
 LANGFUSE_SECRET_KEY=
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_HOST="https://cloud.langfuse.com"
 ```
-11. To utilize the default daily briefing flow, create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
+12. To utilize the default daily briefing flow, create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
 You can utilize other names, but update the `variables` at the top of `main` in `host.py`. 
-12. Update the `system_prompt` in `main` in `plan_exec_agent.py` with a description of who you are and any extra information that will make the model's output better. 
-13. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `plan_exec_agent.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
+13. Update the `system_prompt` in `main` in `plan_exec_agent.py` with a description of who you are and any extra information that will make the model's output better. 
+14. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `plan_exec_agent.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
 For example, if you want the briefing to also check a specific Notion page that has your tasks, the model can also do this
-14. run `python plan_exec_agent.py` to create a daily briefing one time. 
+15. run `python plan_exec_agent.py` to create a daily briefing one time. 
 
 ## Future Work
+
 - More connectors
 - Script to run the briefing automatically at the same time every day
