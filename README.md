@@ -62,7 +62,7 @@ LANGFUSE_HOST="https://cloud.langfuse.com"
 ```
 12. To utilize the default daily briefing flow, create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
 You can utilize other names, but update the `variables` at the top of `main` in `host.py`. 
-13. Update the `system_prompt` in `main` in `plan_exec_agent.py` with a description of who you are and any extra information that will make the model's output better. 
+13. Update the `user_context` in `main` in `plan_exec_agent.py` with a description of who you are, how you like to work (like what communication tools you prefer) and any extra information that will make the model's output better. Update the `base_system_prompt` with any special instructions you want it to take into account. 
 14. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `plan_exec_agent.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
 For example, if you want the briefing to also check a specific Notion page that has your tasks, the model can also do this
 15. run `python plan_exec_agent.py` to create a daily briefing one time. 
