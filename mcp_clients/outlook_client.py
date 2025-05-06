@@ -4,9 +4,9 @@ from mcp.client.stdio import stdio_client
 from mcp_clients.mcp_client import MCPClient
 
 
-class NotionMCPClient(MCPClient):
+class OutlookMCPClient(MCPClient):
     def __init__(self):
-        super().__init__(name="Notion")
+        super().__init__(name="Outlook")
 
     async def connect_to_server(self, server_script_path: str) -> None:
         """Connect to an MCP server
