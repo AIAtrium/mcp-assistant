@@ -5,6 +5,7 @@ from typing import Annotated, List, Tuple, Dict, Any, Union
 from host import MCPHost
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
+from langfuse.decorators import observe, langfuse_context
 
 
 class State(TypedDict):
@@ -47,6 +48,7 @@ class PlanExecAgent:
         # NOTE: can remove this if we are recyling mcp_host.process_query
         await self.mcp_host.get_all_tools_from_servers()
 
+    @observe()
     async def initial_plan(self, state: State) -> Plan:
         """Generate an initial plan based on the user's query."""
         
@@ -105,6 +107,7 @@ class PlanExecAgent:
         # Return a Plan object instead of a list
         return Plan(steps=steps)
 
+    @observe()
     async def execute_step(self, state: State) -> str:
         """Execute the first step from the current plan using the MCP clients."""
         
@@ -158,6 +161,7 @@ class PlanExecAgent:
         processed_result = self.extract_final_result(result)
         return processed_result
 
+    @observe()
     async def replan(self, state: State) -> Act:
         """
         Update the plan based on the results of previous steps.
@@ -358,6 +362,7 @@ class PlanExecAgent:
             cleaned_text = re.sub(r'\[Calling tool.*?\]', '', text)
             return cleaned_text.strip()
 
+    @observe(as_type="trace")
     async def execute_plan(self, query: str, max_iterations: int = 25) -> str:
         """
         Execute a complete plan for the given query.
