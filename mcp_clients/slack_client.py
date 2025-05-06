@@ -12,7 +12,7 @@ class SlackMCPClient(MCPClient):
         """
         Connect to an MCP server
         Usage: python slack_client.py <path_to_server_script>
-        Sample usage: python slack_client.py /Users/myusername/Documents/mcp/exa-mcp-server/build/index.js
+        Sample usage: python slack_client.py /Users/myusername/Documents/mcp/slack-mcp-server/dist/index.js
 
         Args:
             server_script_path: Path to the server script (.py or .js)
@@ -44,7 +44,7 @@ class SlackMCPClient(MCPClient):
         # List available tools
         response = await self.session.list_tools()
         tools = response.tools
-        print("\nConnected to server with tools:", [tool.name for tool in tools])
+        print(f"\nConnected to server {self.name} with tools:", [tool.name for tool in tools])
 
     async def cleanup(self):
         """Clean up resources"""
