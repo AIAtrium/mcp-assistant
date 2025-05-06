@@ -14,6 +14,7 @@ from mcp_clients.notion_client import NotionMCPClient
 from mcp_clients.whatsapp_client import WhatsappMCPClient
 from mcp_clients.exa_client import ExaMCPClient
 from mcp_clients.outlook_client import OutlookMCPClient
+from mcp_clients.slack_client import SlackMCPClient
 
 load_dotenv()
 
@@ -27,6 +28,7 @@ class MCPHost:
         self.whatsapp_client = WhatsappMCPClient()
         self.exa_client = ExaMCPClient()
         self.outlook_client = OutlookMCPClient()
+        self.slack_client = SlackMCPClient()
         
         # Store system prompt as instance variable with a default
         self.system_prompt = default_system_prompt or "You are a helpful assistant."
@@ -39,6 +41,7 @@ class MCPHost:
             self.whatsapp_client.name: self.whatsapp_client,
             self.exa_client.name: self.exa_client,
             self.outlook_client.name: self.outlook_client,
+            self.slack_client.name: self.slack_client,
         }
 
         self.mcp_client_paths = {
@@ -48,6 +51,7 @@ class MCPHost:
             self.whatsapp_client.name: os.getenv("WHATSAPP_MCP_SERVER_PATH"),
             self.exa_client.name: os.getenv("EXA_MCP_SERVER_PATH"),
             self.outlook_client.name: os.getenv("OUTLOOK_MCP_SERVER_PATH"),
+            self.slack_client.name: os.getenv("SLACK_MCP_SERVER_PATH"),
         }
 
         # Map of tool names to client names
