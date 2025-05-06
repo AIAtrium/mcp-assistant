@@ -1,3 +1,4 @@
+import os
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp_clients.mcp_client import MCPClient
@@ -22,8 +23,12 @@ class SlackMCPClient(MCPClient):
             raise ValueError("Server script must be a .py or .js file")
 
         command = "python" if is_python else "node"
+
+        # Create a copy of the current environment and add our variables
+        env = os.environ.copy()
+
         server_params = StdioServerParameters(
-            command=command, args=[server_script_path], env=None
+            command=command, args=[server_script_path], env=env
         )
 
         stdio_transport = await self.exit_stack.enter_async_context(
