@@ -55,8 +55,7 @@ class MCPHost:
             "Whatsapp": os.getenv("WHATSAPP_MCP_SERVER_PATH"),
             "Exa": os.getenv("EXA_MCP_SERVER_PATH"),
             "Outlook": os.getenv("OUTLOOK_MCP_SERVER_PATH"),
-            "Slack": os.getenv("SLACK_MCP_SERVER_PATH"),
-            "Linear": os.getenv("LINEAR_MCP_SERVER_PATH")
+            "Slack": os.getenv("SLACK_MCP_SERVER_PATH")
         }
         self.mcp_client_paths = {
             name: path 
