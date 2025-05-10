@@ -7,6 +7,16 @@ from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 from langfuse.decorators import observe, langfuse_context
 
+DEFAULT_CLIENTS = [
+    "Google Calendar",
+    "Gmail", 
+    "Notion",
+    "Whatsapp",
+    "Exa",
+    "Outlook",
+    "Slack"
+]
+
 
 class State(TypedDict):
     input: str
@@ -580,10 +590,10 @@ async def main():
             ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
             print(f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n")
         else:
-            ENABLED_CLIENTS = None
+            ENABLED_CLIENTS = DEFAULT_CLIENTS
     except ImportError:
         print("Unable to load values from user_inputs.py found, using default values")
-
+        ENABLED_CLIENTS = DEFAULT_CLIENTS
     # Initialize host with system prompt and user context
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,

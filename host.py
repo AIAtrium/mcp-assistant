@@ -7,14 +7,7 @@ from typing import List, Dict, Any, Tuple
 from anthropic import Anthropic
 from langfuse.decorators import observe, langfuse_context
 from mcp.types import TextResourceContents, BlobResourceContents, Tool
-from mcp_clients.mcp_client import MCPClient
-from mcp_clients.gcal_client import GCalMCPClient
-from mcp_clients.gmail_client import GmailMCPClient
-from mcp_clients.notion_client import NotionMCPClient
-from mcp_clients.whatsapp_client import WhatsappMCPClient
-from mcp_clients.exa_client import ExaMCPClient
-from mcp_clients.outlook_client import OutlookMCPClient
-from mcp_clients.slack_client import SlackMCPClient
+from mcp_clients import *
 
 load_dotenv()
 
@@ -62,7 +55,8 @@ class MCPHost:
             "Whatsapp": os.getenv("WHATSAPP_MCP_SERVER_PATH"),
             "Exa": os.getenv("EXA_MCP_SERVER_PATH"),
             "Outlook": os.getenv("OUTLOOK_MCP_SERVER_PATH"),
-            "Slack": os.getenv("SLACK_MCP_SERVER_PATH")
+            "Slack": os.getenv("SLACK_MCP_SERVER_PATH"),
+            "Linear": os.getenv("LINEAR_MCP_SERVER_PATH")
         }
         self.mcp_client_paths = {
             name: path 
@@ -665,10 +659,10 @@ async def main():
             ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
             print(f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n")
         else:
-            ENABLED_CLIENTS = None
+            ENABLED_CLIENTS = DEFAULT_CLIENTS
     except ImportError:
         print("Unable to load values from user_inputs.py found, using default values")
-        ENABLED_CLIENTS = None
+        ENABLED_CLIENTS = DEFAULT_CLIENTS
 
     # Initialize host with default system prompt and enabled clients
     host = MCPHost(
