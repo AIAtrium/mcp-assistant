@@ -1,10 +1,3 @@
-import asyncio
-from mcp_clients.linear_client import LinearMCPClient
-
-async def main():
-    client = LinearMCPClient()
-    await client.connect_to_server()
-
 import os
 import subprocess
 import time
