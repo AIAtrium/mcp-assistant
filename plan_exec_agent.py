@@ -9,12 +9,12 @@ from langfuse.decorators import observe, langfuse_context
 
 DEFAULT_CLIENTS = [
     "Google Calendar",
-    "Gmail", 
+    "Gmail",
     "Notion",
     "Whatsapp",
     "Exa",
     "Outlook",
-    "Slack"
+    "Slack",
 ]
 
 
@@ -52,7 +52,12 @@ class Act(BaseModel):
 
 
 class PlanExecAgent:
-    def __init__(self, default_system_prompt: str = None, user_context: str = None, enabled_clients: List[str] = None):
+    def __init__(
+        self,
+        default_system_prompt: str = None,
+        user_context: str = None,
+        enabled_clients: List[str] = None,
+    ):
         self.mcp_host = MCPHost(default_system_prompt, user_context, enabled_clients)
 
     async def initialize_mcp_clients(self):
@@ -551,7 +556,7 @@ async def main():
     # NOTE: these are Default values you can override in user_inputs.py
     DATE = datetime.today().strftime("%Y-%m-%d")
     NOTION_PAGE_TITLE = "Daily Briefings"
-    
+
     USER_CONTEXT = """
     I am David, the CTO / Co-Founder of a pre-seed startup based in San Francisco. 
     I handle all the coding and product development.
@@ -560,11 +565,11 @@ async def main():
     When looking at my calendar, if you see anything titled 'b', that means it's a blocker.
     I often put blockers before or after calls that could go long.
     """
-    
+
     BASE_SYSTEM_PROMPT = """
     You are a helpful assistant.
     """
-    
+
     QUERY = f"""
     Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
     Do the following:
@@ -579,16 +584,19 @@ async def main():
     try:
         print("Loading values from user_inputs.py")
         import user_inputs
+
         # Override each value individually if it exists in user_inputs
-        if hasattr(user_inputs, 'QUERY'):
+        if hasattr(user_inputs, "QUERY"):
             QUERY = user_inputs.QUERY
-        if hasattr(user_inputs, 'BASE_SYSTEM_PROMPT'):
+        if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
-        if hasattr(user_inputs, 'USER_CONTEXT'):
+        if hasattr(user_inputs, "USER_CONTEXT"):
             USER_CONTEXT = user_inputs.USER_CONTEXT
-        if hasattr(user_inputs, 'ENABLED_CLIENTS'):
+        if hasattr(user_inputs, "ENABLED_CLIENTS"):
             ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
-            print(f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n")
+            print(
+                f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
+            )
         else:
             ENABLED_CLIENTS = DEFAULT_CLIENTS
     except ImportError:
@@ -598,7 +606,7 @@ async def main():
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
-        enabled_clients=ENABLED_CLIENTS
+        enabled_clients=ENABLED_CLIENTS,
     )
 
     try:

@@ -1,4 +1,3 @@
-from .linear_client import *
 from .notion_client import *
 from .gmail_client import *
 from .gcal_client import *
