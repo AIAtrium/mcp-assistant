@@ -4,6 +4,7 @@ from langfuse.decorators import observe
 from langfuse.decorators import langfuse_context
 from arcadepy import Arcade
 from arcadepy.types import ExecuteToolResponse
+from arcade_utils import ModelProvider
 
 
 class ToolProcessor:
@@ -22,6 +23,7 @@ class ToolProcessor:
         tool_results_context: Dict[str, Any],
         final_text: List[str],
         user_id: str,
+        provider: ModelProvider,
         langfuse_session_id: str = None,
     ) -> Tuple[List[Dict[str, Any]], Any]:
         """
@@ -56,6 +58,7 @@ class ToolProcessor:
                 messages,
                 final_text,
                 user_id,
+                provider
             )
 
     def _handle_reference_tool(
@@ -82,7 +85,7 @@ class ToolProcessor:
             )
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content
+            tool_id, content, assistant_message_content, messages, result_content, ModelProvider.ANTHROPIC
         )
 
     def _extract_reference_data(self, result_content: Any, extract_path: str) -> str:
@@ -113,6 +116,7 @@ class ToolProcessor:
         messages: List[Dict[str, Any]],
         final_text: List[str],
         user_id: str,
+        provider: ModelProvider,
     ) -> Tuple[List[Dict[str, Any]], str]:
         """Handle standard tools using Arcade's tool execution flow."""
         try:
@@ -160,7 +164,7 @@ class ToolProcessor:
             result_content = error_message
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content
+            tool_id, content, assistant_message_content, messages, result_content, provider
         )
 
     def _create_tool_response(
@@ -170,25 +174,47 @@ class ToolProcessor:
         assistant_message_content: List[Any],
         messages: List[Dict[str, Any]],
         result_content: str,
+        provider: ModelProvider,
     ) -> Tuple[List[Dict[str, Any]], str]:
         """Create a standardized tool response format."""
-        assistant_message_content.append(content)
         updated_messages = messages.copy()
-        updated_messages.append(
-            {"role": "assistant", "content": assistant_message_content}
-        )
 
-        updated_messages.append(
-            {
+        if provider == ModelProvider.ANTHROPIC:
+            # Anthropic format
+            assistant_message_content.append(content)
+            updated_messages.append({"role": "assistant", "content": assistant_message_content})
+            updated_messages.append({
                 "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": result_content,
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": result_content,
+                }]
+            })
+        else:
+            # OpenAI format
+            tool_name = content["name"] if isinstance(content, dict) else content.name
+            tool_args = content["input"] if isinstance(content, dict) else content.input
+            
+            # Add the assistant's message with the tool call
+            updated_messages.append({
+                "role": "assistant",
+                "content": None,  # Content is null when there's a tool call
+                "tool_calls": [{
+                    "id": tool_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(tool_args)
                     }
-                ],
-            }
-        )
+                }]
+            })
+            
+            # Add the tool result
+            updated_messages.append({
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": result_content,
+            })
 
         return updated_messages, result_content

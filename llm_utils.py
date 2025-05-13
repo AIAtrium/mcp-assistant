@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from anthropic import Anthropic
+from anthropic.types.message import Message
 from openai import OpenAI
 from openai.types.chat.chat_completion import ChatCompletion
 from langfuse.decorators import observe, langfuse_context
@@ -48,7 +49,7 @@ class LLMMessageCreator:
             session_id=langfuse_session_id,
         )
 
-        response = self.anthropic.messages.create(
+        response: Message = self.anthropic.messages.create(
             model="claude-3-5-sonnet-20241022",
             max_tokens=4096,
             system=system_prompt,
@@ -72,7 +73,7 @@ class LLMMessageCreator:
 
         return response
 
-    async def _create_openai_message(
+    def _create_openai_message(
         self, messages, available_tools, system_prompt, langfuse_session_id=None
     ):
         """Create a message using OpenAI API with the given messages and tools."""
@@ -90,7 +91,7 @@ class LLMMessageCreator:
         all_messages = [{"role": "system", "content": system_prompt}] + messages
 
         response: ChatCompletion = self.openai.chat.completions.create(
-            model="gpt-4o",  # adjust as needed
+            model="gpt-4o",
             messages=all_messages,
             tools=available_tools,
             tool_choice="auto",

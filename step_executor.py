@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime
 from dotenv import load_dotenv
 from typing import List, Dict
@@ -103,7 +104,6 @@ class StepExecutor:
         # TODO: alter this to account for only the available tools the user wants to authorize
         available_tools = self.get_all_tools(provider)
 
-        # Use the message creator instead of direct Claude call
         response = self.message_creator.create_message(
             provider=provider,
             messages=messages,
@@ -112,7 +112,6 @@ class StepExecutor:
             langfuse_session_id=langfuse_session_id,
         )
 
-        # Process response and handle tool calls
         final_text = []
 
         # Continue processing until we have a complete response
@@ -120,21 +119,37 @@ class StepExecutor:
             assistant_message_content = []
             has_tool_calls = False
 
-            for content in response.content:
-                if content.type == "text":
-                    final_text.append(content.text)
+            # Handle different response formats based on provider
+            if provider == ModelProvider.ANTHROPIC:
+                response_contents = response.content
+            elif provider == ModelProvider.OPENAI:
+                # OpenAI returns a single choice with a message
+                message = response.choices[0].message
+                # Convert OpenAI format to match Anthropic's structure
+                response_contents = []
+                if message.content:
+                    response_contents.append({"type": "text", "text": message.content})
+                if message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        response_contents.append({
+                            "type": "tool_use",
+                            "name": tool_call.function.name,
+                            "input": json.loads(tool_call.function.arguments),
+                            "id": tool_call.id
+                        })
+
+            for content in response_contents:
+                if ('type' in content and content["type"] == "text") or (hasattr(content, "type") and content.type == "text"):
+                    final_text.append(content["text"] if isinstance(content, dict) else content.text)
                     assistant_message_content.append(content)
-                elif content.type == "tool_use":
+                elif ('type' in content and content["type"] == "tool_use") or (hasattr(content, "type") and content.type == "tool_use"):
                     has_tool_calls = True
-                    tool_name = content.name
-                    tool_args = content.input
-                    tool_id = content.id
+                    tool_name = content["name"] if isinstance(content, dict) else content.name
+                    tool_args = content["input"] if isinstance(content, dict) else content.input
+                    tool_id = content["id"] if isinstance(content, dict) else content.id
 
                     # Process the specific tool call
-                    (
-                        updated_messages,
-                        result_content,
-                    ) = self.tool_processor.process_tool_call(
+                    updated_messages, result_content = self.tool_processor.process_tool_call(
                         tool_name,
                         tool_args,
                         tool_id,
@@ -144,6 +159,7 @@ class StepExecutor:
                         tool_results_context,
                         final_text,
                         user_id,
+                        provider,
                         langfuse_session_id,
                     )
 
@@ -151,8 +167,8 @@ class StepExecutor:
                     messages = updated_messages
                     if result_content:
                         tool_results_context[tool_id] = result_content
-
-                    # Get next response from Claude after a tool call
+                    
+                    # Get next response
                     response = self.message_creator.create_message(
                         provider=provider,
                         messages=messages,
@@ -166,8 +182,11 @@ class StepExecutor:
 
             # If there are no more tool calls, add the final text and break the loop
             if not has_tool_calls:
-                if len(response.content) > 0 and response.content[0].type == "text":
-                    final_text.append(response.content[0].text)
+                if provider == ModelProvider.ANTHROPIC and len(response.content) > 0:
+                    if response.content[0].type == "text":
+                        final_text.append(response.content[0].text)
+                elif provider == ModelProvider.OPENAI and response.choices[0].message.content:
+                    final_text.append(response.choices[0].message.content)
                 break
 
         # Add a line at the end, before returning the result
@@ -236,15 +255,15 @@ def main():
     print(f"INPUT_ACTION: {INPUT_ACTION}")
 
     # Initialize host with default system prompt and enabled clients
-    host = StepExecutor(
+    executor = StepExecutor(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
         # enabled_clients=ENABLED_CLIENTS,
     )
 
-    result = host.process_input_with_agent_loop(
+    result = executor.process_input_with_agent_loop(
         input_action=INPUT_ACTION,
-        provider=ModelProvider.ANTHROPIC,
+        provider=ModelProvider.OPENAI,
         user_id="david_test",
         langfuse_session_id=LANGFUSE_SESSION_ID,
     )
