@@ -2,10 +2,11 @@ import asyncio
 import operator
 from datetime import datetime
 from typing import Annotated, List, Tuple, Dict, Any, Union
-from host import MCPHost
+from step_executor import StepExecutor
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 from langfuse.decorators import observe, langfuse_context
+from arcade_utils import ModelProvider
 
 DEFAULT_CLIENTS = [
     "Google Calendar",
@@ -20,6 +21,7 @@ DEFAULT_CLIENTS = [
 
 class State(TypedDict):
     input: str
+    provider: ModelProvider
     inital_plan: List[str]
     current_plan: List[str]
     past_steps: Annotated[List[Tuple], operator.add]
@@ -58,13 +60,12 @@ class PlanExecAgent:
         user_context: str = None,
         enabled_clients: List[str] = None,
     ):
-        self.mcp_host = MCPHost(default_system_prompt, user_context, enabled_clients)
-
-    async def initialize_mcp_clients(self):
-        await self.mcp_host.initialize_mcp_clients()
+        self.step_executor = StepExecutor(
+            default_system_prompt, user_context, enabled_clients
+        )
 
     @observe()
-    async def initial_plan(self, state: State) -> Plan:
+    def initial_plan(self, state: State) -> Plan:
         """Generate an initial plan based on the user's query."""
 
         # hybrid of langgraph's prompt and our own
@@ -77,7 +78,7 @@ class PlanExecAgent:
         The result of the final step should be the final answer. Make sure that each step has all the information needed - do not skip steps.
 
         USER CONTEXT:
-        {self.mcp_host.user_context}
+        {self.step_executor.user_context}
 
         Use this context to inform your planning decisions. For example, prefer tools and approaches that align with the user's preferences and work environment.
         """
@@ -95,7 +96,7 @@ class PlanExecAgent:
         planning_tools = self.get_planning_tools()
 
         # Get available tools to inform the planning
-        available_tools = await self.mcp_host.get_all_tools()
+        available_tools = self.step_executor.get_all_tools(state["provider"])
         tool_descriptions = "\n".join(
             [f"- {tool['name']}: {tool['description']}" for tool in available_tools]
         )
@@ -106,7 +107,8 @@ class PlanExecAgent:
         messages = [{"role": "user", "content": plan_prompt}]
 
         # NOTE: we are not using the user-specific system prompt
-        response = await self.mcp_host._create_claude_message(
+        response = self.step_executor.message_creator.create_message(
+            state["provider"],
             messages,
             [planning_tools["plan_tool"]],
             plan_system_prompt,
@@ -137,7 +139,7 @@ class PlanExecAgent:
         return Plan(steps=steps)
 
     @observe()
-    async def execute_step(self, state: State) -> str:
+    def execute_step(self, state: State) -> str:
         """Execute the first step from the current plan using the MCP clients."""
 
         # Get the current step from the state
@@ -184,8 +186,10 @@ class PlanExecAgent:
         if tool_results is None:
             state["tool_results"] = {}
 
-        result = await self.mcp_host.process_input_with_agent_loop(
+        result = self.step_executor.process_input_with_agent_loop(
             execution_prompt,
+            state["provider"],
+            user_id=state["user_id"],
             system_prompt=executor_system_prompt,
             langfuse_session_id=state["langfuse_session_id"],
             state=state,
@@ -197,7 +201,7 @@ class PlanExecAgent:
         return processed_result
 
     @observe()
-    async def replan(self, state: State) -> Act:
+    def replan(self, state: State) -> Act:
         """
         Update the plan based on the results of previous steps.
 
@@ -221,7 +225,7 @@ class PlanExecAgent:
         Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
 
         USER CONTEXT:
-        {self.mcp_host.user_context}
+        {self.step_executor.user_context}
 
         Use this context to inform your planning decisions. For example, prefer tools and approaches that align with the user's preferences and work environment.
         """
@@ -267,8 +271,12 @@ class PlanExecAgent:
 
         messages = [{"role": "user", "content": replan_prompt}]
 
-        response = await self.mcp_host._create_claude_message(
-            messages, replan_tools, replan_system_prompt, state["langfuse_session_id"]
+        response = self.step_executor.message_creator.create_message(
+            state["provider"],
+            messages,
+            replan_tools,
+            replan_system_prompt,
+            state["langfuse_session_id"],
         )
 
         # Process the response to determine the action
@@ -298,11 +306,7 @@ class PlanExecAgent:
         # Default fallback
         return Act(action=Plan(steps=state["current_plan"]))
 
-    async def cleanup(self):
-        """Clean up resources."""
-        await self.mcp_host.cleanup()
-
-    def extract_plan_from_response(response_text: str) -> List[str]:
+    def extract_plan_from_response(self, response_text: str) -> List[str]:
         """
         Extract a plan (list of steps) from Claude's response text.
         Handles various formats including JSON, markdown lists, and numbered lists.
@@ -417,7 +421,13 @@ class PlanExecAgent:
             return cleaned_text.strip()
 
     @observe(as_type="trace")
-    async def execute_plan(self, query: str, max_iterations: int = 25) -> str:
+    def execute_plan(
+        self,
+        input_action: str,
+        provider: ModelProvider = ModelProvider.ANTHROPIC,
+        max_iterations: int = 25,
+        user_id: str = "test-user"
+    ) -> str:
         """
         Execute a complete plan for the given query.
 
@@ -436,18 +446,20 @@ class PlanExecAgent:
         """
         # Initialize state with values needed for the entire lifecycle
         state = {
-            "input": query,
+            "input": input_action,
             "langfuse_session_id": datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
             "past_steps": [],
             "current_plan": [],
             "tool_results": {},
             "initial_plan": [],
             "response": "",
+            "provider": provider,
+            "user_id": user_id,
         }
 
         # Step 1: Generate the initial plan
-        print(f"Generating initial plan for query: {query}")
-        plan = await self.initial_plan(state)
+        print(f"Generating initial plan for query: {input_action}")
+        plan = self.initial_plan(state)
         state["initial_plan"] = plan.steps
         state["current_plan"] = plan.steps.copy()
         print(f"Initial plan generated with {len(plan.steps)} steps")
@@ -463,7 +475,7 @@ class PlanExecAgent:
             current_step = state["current_plan"][0]
             print(f"Executing step: {current_step}")
 
-            result = await self.execute_step(state)
+            result = self.execute_step(state)
             print(f"Step execution completed")
 
             # Update past_steps with the completed step and its result
@@ -471,7 +483,7 @@ class PlanExecAgent:
 
             # If we still have steps left or just completed the last one, replan
             print("Replanning based on execution results")
-            replan_result = await self.replan(state)
+            replan_result = self.replan(state)
 
             # Process the replanning result
             if isinstance(replan_result.action, Response):
@@ -492,7 +504,7 @@ class PlanExecAgent:
                     # Generate a final response based on results
                     final_response_prompt = f"""
                     ## Objective:
-                    {query}
+                    {input_action}
                     
                     ## Steps completed:
                     """
@@ -505,11 +517,13 @@ class PlanExecAgent:
                         "Please provide a final summary of what was accomplished."
                     )
 
-                    state[
-                        "response"
-                    ] = await self.mcp_host.process_input_with_agent_loop(
-                        final_response_prompt,
-                        langfuse_session_id=state["langfuse_session_id"],
+                    state["response"] = (
+                        self.step_executor.process_input_with_agent_loop(
+                            final_response_prompt,
+                            state["provider"],
+                            user_id=state["user_id"],
+                            langfuse_session_id=state["langfuse_session_id"],
+                        )
                     )
                     break
 
@@ -522,7 +536,7 @@ class PlanExecAgent:
             # Generate a partial response
             incomplete_response_prompt = f"""
             ## Objective:
-            {query}
+            {input_action}
             
             ## Steps completed ({iteration}/{max_iterations}, plan not completed):
             """
@@ -539,8 +553,10 @@ class PlanExecAgent:
 
             incomplete_response_prompt += "\nPlease provide a summary of progress made and what remains to be done."
 
-            state["response"] = await self.mcp_host.process_input_with_agent_loop(
+            state["response"] = self.step_executor.process_input_with_agent_loop(
                 incomplete_response_prompt,
+                state["provider"],
+                user_id=state["user_id"],
                 langfuse_session_id=state["langfuse_session_id"],
             )
 
@@ -548,7 +564,7 @@ class PlanExecAgent:
         return state["response"]
 
 
-async def main():
+def main():
     """
     This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
     Configuration can be customized in user_inputs.py, or will use defaults if not found.
@@ -570,7 +586,7 @@ async def main():
     You are a helpful assistant.
     """
 
-    QUERY = f"""
+    INPUT_ACTION = f"""
     Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
     Do the following:
     1) check my gmail, look for unread emails and tell me if any are high priority
@@ -586,8 +602,8 @@ async def main():
         import user_inputs
 
         # Override each value individually if it exists in user_inputs
-        if hasattr(user_inputs, "QUERY"):
-            QUERY = user_inputs.QUERY
+        if hasattr(user_inputs, "INPUT_ACTION"):
+            INPUT_ACTION = user_inputs.INPUT_ACTION
         if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
         if hasattr(user_inputs, "USER_CONTEXT"):
@@ -602,6 +618,7 @@ async def main():
     except ImportError:
         print("Unable to load values from user_inputs.py found, using default values")
         ENABLED_CLIENTS = DEFAULT_CLIENTS
+
     # Initialize host with system prompt and user context
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
@@ -609,13 +626,9 @@ async def main():
         enabled_clients=ENABLED_CLIENTS,
     )
 
-    try:
-        await host.initialize_mcp_clients()
-        result = await host.execute_plan(QUERY)
-        print(result)
-    finally:
-        await host.cleanup()
+    result = host.execute_plan(INPUT_ACTION)
+    print(result)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

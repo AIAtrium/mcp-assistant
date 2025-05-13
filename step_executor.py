@@ -73,6 +73,10 @@ class StepExecutor:
             },
         }
 
+    # TODO: alter this to take into account enabled clients
+    def get_all_tools(self, provider: ModelProvider):
+        return get_tools_from_arcade(self.arcade_client, provider)
+
     @observe()
     def process_input_with_agent_loop(
         self,
@@ -97,7 +101,7 @@ class StepExecutor:
         messages = [{"role": "user", "content": input_action}]
 
         # TODO: alter this to account for only the available tools the user wants to authorize
-        available_tools = get_tools_from_arcade(self.arcade_client, provider)
+        available_tools = self.get_all_tools(provider)
 
         # Use the message creator instead of direct Claude call
         response = self.message_creator.create_message(
@@ -210,8 +214,8 @@ def main():
         import user_inputs
 
         # Override each value individually if it exists in user_inputs
-        # if hasattr(user_inputs, "QUERY"):
-        #     INPUT_ACTION = user_inputs.QUERY
+        if hasattr(user_inputs, "INPUT_ACTION"):
+            INPUT_ACTION = user_inputs.INPUT_ACTION
         if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
         if hasattr(user_inputs, "USER_CONTEXT"):
