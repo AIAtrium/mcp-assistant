@@ -3,6 +3,62 @@
 This is an AI assistant that runs using MCP. 
 
 ## How to install before running
+### Basic Setup
+This application uses [Arcade](https://www.arcade.dev/) to facilitate tool use so you don't need to run any local MCP servers or connect to any remotely in the cloud. Please sign up for Arcade and get a free api key to use this repo. 
+
+Set the following enviroment variables in an `.env` file in the project root:
+```
+ANTHROPIC_API_KEY=
+ARCADE_API_KEY=
+OPENAI_API_KEY=
+```
+You only need one LLM key. This repo only supports OpenAI and Anthropic models currently. 
+
+### Observability and tracing
+This project uses [Langfuse](https://github.com/langfuse/langfuse) for observability and tracing. Its not mandatory but its helpful to see the dozens of LLM calls that occur nicely formatted in a UI. To utilize it, set these environment variables in the `.env`:
+
+```
+LANGFUSE_SECRET_KEY=
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_HOST="https://cloud.langfuse.com"
+```
+
+## How to Run
+The MCP Assistant application is heavily customizable. You can do anything email triaging to lead qualification.
+
+The default workflow generates a **daily briefing** over various tools like email, calendar, whatsapp and Notion that tells you your schedule for the day, gives you background research from the internet about who you're meeting with and tells you what is urgent. 
+
+### Run the Default Flow - Daily Briefing in Notion
+1. Create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
+2. Update the `user_context` in `main` in `plan_exec_agent.py` with a description of who you are, how you like to work (like what communication tools you prefer) and any extra information that will make the model's output better. Update the `base_system_prompt` with any special instructions you want it to take into account. 
+3. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `plan_exec_agent.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
+For example, if you want the briefing to also check a specific Notion page that has your tasks, the model can also do this
+4. (Optional) You can alter the `DEFAULT_TOOLS` array at the top of `plan_exec_agent
+.py` to have only these values `["Gmail", "Google Calendar", "Whatsapp", "Exa", "Notion"]` so you don't have to set up every MCP server
+5. run `python plan_exec_agent.py` to create a daily briefing one time. 
+
+### Run your own Custom Flow
+Create a file called `user_inputs.py` in root directory then add the following constant variables that will control how the assistant runs:
+1. `QUERY` - your request for the MCP assistant
+2. `USER_CONTEXT` - background information on who you are, what your preferences are, how you like to work, etc. Helps the model produce better output
+3. `BASE_SYSTEM_PROMPT` - any special instructions the model may need to take into account beyond your user preferences. defaults to 'you are a helpful assistant'
+4. `ENABLED_CLIENTS` - an array of strings containing the names of the MCP servers you want the system to have access to. Make sure they are the same names as those used in the `mcp_clients/` implementations. This will allow you to omit, for example, outlook, and still have the system run without issue
+
+Then run `python plan_exec_agent.py` to see the result
+
+## Future Work
+
+- More connectors
+- Script to run the briefing automatically at the same time every day as a background process
+- Fix asyncio log pollution
+- Make sure the agent can iterate over every item for a given task (i.e. all 50 emails in an inbox, rather than only the first 10)
+- Save the execution graph after a successful run and load it next time instead of regenerating it
+- Context window reduction mechanism / token limiting to save money
+- Configurability for different models at different steps - planning vs. executing, cheap vs. expensive
+- Support more models
+
+## Instructions on How to Run the Legacy MCP Functionality
+
 You must install MCP servers in order to use this application. You do not need to install them all, the code will run without them all installed but their tools will not be accessible. The instructions for all of them are below:
 
 1. create a python venv then `pip install -r requirements.txt`
@@ -53,44 +109,3 @@ SLACK_USER_TOKEN=
 ```
 
 **Note** the unusual setup for the _Notion Token_ under `OPENAPI_MCP_HEADERS`
-
-### Observability and tracing
-This project uses [Langfuse](https://github.com/langfuse/langfuse) for observability and tracing. Its not mandatory but its helpful to see the dozens of LLM calls that occur nicely formatted in a UI. To utilize it, set these environment variables in the `.env`:
-
-```
-LANGFUSE_SECRET_KEY=
-LANGFUSE_PUBLIC_KEY=
-LANGFUSE_HOST="https://cloud.langfuse.com"
-```
-
-## How to Run
-The MCP Assistant application is heavily customizable. You can do anything email triaging to lead qualification.
-
-The default workflow generates a **daily briefing** over various tools like email, calendar, whatsapp and Notion that tells you your schedule for the day, gives you background research from the internet about who you're meeting with and tells you what is urgent. 
-
-### Run the Default Flow - Daily Briefing in Notion
-1. Create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
-2. Update the `user_context` in `main` in `plan_exec_agent.py` with a description of who you are, how you like to work (like what communication tools you prefer) and any extra information that will make the model's output better. Update the `base_system_prompt` with any special instructions you want it to take into account. 
-3. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `plan_exec_agent.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
-For example, if you want the briefing to also check a specific Notion page that has your tasks, the model can also do this
-4. (Optional) You can alter the `DEFAULT_TOOLS` array at the top of `host.py` to have only these values `["Gmail", "Google Calendar", "Whatsapp", "Exa", "Notion"]` so you don't have to set up every MCP server
-5. run `python plan_exec_agent.py` to create a daily briefing one time. 
-
-### Run your own Custom Flow
-Create a file called `user_inputs.py` in root directory then add the following constant variables that will control how the assistant runs:
-1. `QUERY` - your request for the MCP assistant
-2. `USER_CONTEXT` - background information on who you are, what your preferences are, how you like to work, etc. Helps the model produce better output
-3. `BASE_SYSTEM_PROMPT` - any special instructions the model may need to take into account beyond your user preferences. defaults to 'you are a helpful assistant'
-4. `ENABLED_CLIENTS` - an array of strings containing the names of the MCP servers you want the system to have access to. Make sure they are the same names as those used in the `mcp_clients/` implementations. This will allow you to omit, for example, outlook, and still have the system run without issue
-
-Then run `python plan_exec_agent.py` to see the result
-
-## Future Work
-
-- More connectors
-- Script to run the briefing automatically at the same time every day as a background process
-- Fix asyncio log pollution
-- Make sure the agent can iterate over every item for a given task (i.e. all 50 emails in an inbox, rather than only the first 10)
-- Save the execution graph after a successful run and load it next time instead of regenerating it
-- Context window reduction mechanism / token limiting to save money
-- Configurability for different models at different steps - planning vs. executing, cheap vs. expensive
