@@ -54,29 +54,58 @@ class StepExecutor:
         self.system_prompt = default_system_prompt or "You are a helpful assistant."
         self.user_context = user_context if user_context else ""
 
-        # Add a tool reference capability that allows the LLM to reference previous tool outputs
-        self.reference_tool_output = {
-            "name": "reference_tool_output",
-            "description": "Reference the output of a previously called tool",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "tool_id": {
-                        "type": "string",
-                        "description": "The ID of the previously called tool",
+    def _get_reference_tool(self, provider: ModelProvider):
+        if provider == ModelProvider.ANTHROPIC:
+            return {
+                "name": "reference_tool_output",
+                "description": "Reference the output of a previously called tool",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "tool_id": {
+                            "type": "string",
+                            "description": "The ID of the previously called tool",
+                        },
+                        "extract_path": {
+                            "type": "string",
+                            "description": "Optional JSON path to extract specific data from the tool result",
+                        },
                     },
-                    "extract_path": {
-                        "type": "string",
-                        "description": "Optional JSON path to extract specific data from the tool result",
-                    },
+                    "required": ["tool_id"],
                 },
-                "required": ["tool_id"],
-            },
-        }
-
+            }
+        elif provider == ModelProvider.OPENAI:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "reference_tool_output",
+                    "description": "Reference the output of a previously called tool",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "tool_id": {
+                                "type": "string",
+                                "description": "The ID of the previously called tool",
+                            },
+                            "extract_path": {
+                                "type": "string",
+                                "description": "Optional JSON path to extract specific data from the tool result",
+                            },
+                        },
+                        "required": ["tool_id"],
+                    },
+                }
+                
+            }
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+    
     # TODO: alter this to take into account enabled clients
     def get_all_tools(self, provider: ModelProvider):
-        return get_tools_from_arcade(self.arcade_client, provider)
+        # Add a tool reference capability that allows the LLM to reference previous tool outputs
+        reference_tool = self._get_reference_tool(provider)
+        arcade_tools = get_tools_from_arcade(self.arcade_client, provider)
+        return arcade_tools + [reference_tool]
 
     @observe()
     def process_input_with_agent_loop(
