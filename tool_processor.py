@@ -1,0 +1,194 @@
+import json
+from typing import Dict, List, Tuple, Any
+from langfuse.decorators import observe
+from langfuse.decorators import langfuse_context
+from arcadepy import Arcade
+from arcadepy.types import ExecuteToolResponse
+
+
+class ToolProcessor:
+    def __init__(self, arcade_client: Arcade = None):
+        self.arcade_client = arcade_client
+
+    @observe(as_type="tool")
+    def process_tool_call(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        tool_id: str,
+        content: Any,
+        assistant_message_content: List[Any],
+        messages: List[Dict[str, Any]],
+        tool_results_context: Dict[str, Any],
+        final_text: List[str],
+        user_id: str,
+        langfuse_session_id: str = None,
+    ) -> Tuple[List[Dict[str, Any]], Any]:
+        """
+        Process a specific tool call and return updated messages and result content.
+
+        NOTE: this does not currently support MCP resources the way the MCP host does because
+        Arcade's off the shelf tools don't support it and its not necessary.
+        """
+
+        # Add langfuse tracking
+        if langfuse_session_id:
+            langfuse_context.update_current_observation(name=tool_name)
+            langfuse_context.update_current_trace(session_id=langfuse_session_id)
+            langfuse_context.flush()
+
+        if tool_name == "reference_tool_output":
+            return self._handle_reference_tool(
+                tool_id,
+                tool_args,
+                content,
+                assistant_message_content,
+                messages,
+                tool_results_context,
+            )
+        else:
+            return self._handle_standard_tool(
+                tool_name,
+                tool_args,
+                tool_id,
+                content,
+                assistant_message_content,
+                messages,
+                final_text,
+                user_id,
+            )
+
+    def _handle_reference_tool(
+        self,
+        tool_id: str,
+        tool_args: Dict[str, Any],
+        content: Any,
+        assistant_message_content: List[Any],
+        messages: List[Dict[str, Any]],
+        tool_results_context: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], Any]:
+        """Handle reference_tool_output tool."""
+        referenced_tool_id = tool_args["tool_id"]
+        extract_path = tool_args.get("extract_path", None)
+        result_content = None
+
+        if referenced_tool_id in tool_results_context:
+            result_content = self._extract_reference_data(
+                tool_results_context[referenced_tool_id], extract_path
+            )
+        else:
+            result_content = (
+                f"Error: No tool result found with ID '{referenced_tool_id}'"
+            )
+
+        return self._create_tool_response(
+            tool_id, content, assistant_message_content, messages, result_content
+        )
+
+    def _extract_reference_data(self, result_content: Any, extract_path: str) -> str:
+        """Extract data from a result using the given path."""
+        if not extract_path or not result_content:
+            return result_content
+
+        try:
+            data = json.loads(result_content)
+            parts = extract_path.split(".")
+            for part in parts:
+                if part in data:
+                    data = data[part]
+                else:
+                    data = None
+                    break
+            return json.dumps(data) if data else "Path not found in data"
+        except json.JSONDecodeError:
+            return "Cannot extract path: result is not valid JSON"
+
+    def _handle_standard_tool(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        tool_id: str,
+        content: Any,
+        assistant_message_content: List[Any],
+        messages: List[Dict[str, Any]],
+        final_text: List[str],
+        user_id: str,
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        """Handle standard tools using Arcade's tool execution flow."""
+        try:
+            # First authorize the tool
+            auth_response = self.arcade_client.tools.authorize(
+                tool_name=tool_name,
+                user_id=user_id,
+            )
+
+            if auth_response.status != "completed":
+                print(f"Authorization needed. URL: {auth_response.url}")
+                # Wait for the authorization to complete
+                self.arcade_client.auth.wait_for_completion(auth_response)
+
+            # Convert tool_args to dict if it's a string
+            tool_input = tool_args if isinstance(tool_args, dict) else eval(tool_args)
+
+            # Execute the tool
+            response: ExecuteToolResponse = self.arcade_client.tools.execute(
+                tool_name=tool_name,
+                input=tool_input,
+                user_id=user_id,
+            )
+
+            final_text.append(f"[Executing tool {tool_name} with args {tool_input}]")
+
+            # Handle the response
+            if response.status == "completed":
+                output = response.output
+                if output.error:
+                    result_content = f"Error: {output.error.message}"
+                else:
+                    result_content = (
+                        output.value
+                        if isinstance(output.value, str)
+                        else json.dumps(output.value)
+                    )
+            else:
+                result_content = f"Tool execution failed with status: {response.status}"
+
+        except Exception as e:
+            error_message = f"Error executing tool '{tool_name}': {str(e)}"
+            print(error_message)
+            final_text.append(error_message)
+            result_content = error_message
+
+        return self._create_tool_response(
+            tool_id, content, assistant_message_content, messages, result_content
+        )
+
+    def _create_tool_response(
+        self,
+        tool_id: str,
+        content: Any,
+        assistant_message_content: List[Any],
+        messages: List[Dict[str, Any]],
+        result_content: str,
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        """Create a standardized tool response format."""
+        assistant_message_content.append(content)
+        updated_messages = messages.copy()
+        updated_messages.append(
+            {"role": "assistant", "content": assistant_message_content}
+        )
+
+        updated_messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": result_content,
+                    }
+                ],
+            }
+        )
+
+        return updated_messages, result_content

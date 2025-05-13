@@ -1,4 +1,9 @@
 from arcadepy import Arcade
+from enum import Enum
+
+class ModelProvider(Enum):
+    ANTHROPIC = 'anthropic'
+    OPENAI = 'openai'
 
 AVAILABLE_TOOLS = {
     "tools":
@@ -42,13 +47,13 @@ AVAILABLE_TOOLS = {
     ]
 }
 
-def get_tools_from_arcade(arcade_client: Arcade, provider: str):
+def get_tools_from_arcade(arcade_client: Arcade, provider: ModelProvider):
     tools = []
     for toolkit in AVAILABLE_TOOLS["toolkits"]:
-        tools.extend(arcade_client.tools.formatted.list(toolkit=toolkit, format=provider))
+        tools.extend(arcade_client.tools.formatted.list(toolkit=toolkit, format=provider.value))
 
     for tool_list in AVAILABLE_TOOLS["tools"].values():
         for tool in tool_list:
-            tools.append(arcade_client.tools.formatted.get(name=tool, format=provider))
+            tools.append(arcade_client.tools.formatted.get(name=tool, format=provider.value))
 
     return tools
