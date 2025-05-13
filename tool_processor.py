@@ -140,7 +140,7 @@ class ToolProcessor:
             final_text.append(f"[Executing tool {tool_name} with args {tool_input}]")
 
             # Handle the response
-            if response.status == "completed":
+            if response.success:
                 output = response.output
                 if output.error:
                     result_content = f"Error: {output.error.message}"
