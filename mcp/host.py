@@ -656,7 +656,7 @@ async def main():
 
         # Override each value individually if it exists in user_inputs
         if hasattr(user_inputs, "QUERY"):
-            QUERY = user_inputs.QUERY
+            QUERY = user_inputs.INPUT_ACTION
         if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
         if hasattr(user_inputs, "USER_CONTEXT"):
