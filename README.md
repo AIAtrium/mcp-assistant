@@ -4,6 +4,8 @@ This is an AI assistant that runs using MCP.
 
 ## How to install before running
 ### Basic Setup
+First create a python venv then `pip install -r requirements.txt`.
+
 This application uses [Arcade](https://www.arcade.dev/) to facilitate tool use so you don't need to run any local MCP servers or connect to any remotely in the cloud. Please sign up for Arcade and get a free api key to use this repo. 
 
 Set the following enviroment variables in an `.env` file in the project root:
