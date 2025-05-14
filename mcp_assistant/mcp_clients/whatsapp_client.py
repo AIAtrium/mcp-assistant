@@ -1,4 +1,5 @@
 import os
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp_clients.mcp_client import MCPClient
@@ -18,6 +19,10 @@ class WhatsappMCPClient(MCPClient):
         venv_path = os.getenv(
             "WHATSAPP_MCP_SERVER_VENV_PATH"
         )  # Replace with actual path
+        if not venv_path:
+            raise ValueError(
+                "WHATSAPP_MCP_SERVER_VENV_PATH not found in env, perhaps you forgot to set it up"
+            )
         venv_python = f"{venv_path}/bin/python"
 
         command = venv_python
@@ -43,7 +48,7 @@ class WhatsappMCPClient(MCPClient):
             stdio_client(server_params)
         )
         self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(
+        self.session: ClientSession = await self.exit_stack.enter_async_context(
             ClientSession(self.stdio, self.write)
         )
 

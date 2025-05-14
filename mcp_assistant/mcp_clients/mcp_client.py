@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any
 from contextlib import AsyncExitStack
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+
+from mcp import ClientSession
 
 
 class MCPClient(ABC):
@@ -10,7 +9,7 @@ class MCPClient(ABC):
 
     def __init__(self, name: str):
         # Initialize session and client objects
-        self.session: Optional[ClientSession] = None
+        self.session: ClientSession | None = None
         self.exit_stack = AsyncExitStack()
         self.name = name
 
@@ -23,7 +22,7 @@ class MCPClient(ABC):
         Args:
             server_script_path: Path to the server script (.py or .js)
         """
-        pass
+        # type: (...) -> None # sets self.session: ClientSession
 
     # In mcp_client.py
     async def cleanup(self) -> None:
@@ -32,6 +31,9 @@ class MCPClient(ABC):
             if self.session:
                 # Try to explicitly close the session first
                 try:
+                    raise ValueError(
+                        "This should have never been called, self.session.shutdown is undefined"
+                    )
                     await self.session.shutdown()
                 except Exception as e:
                     print(f"Warning: Error shutting down session for {self.name}: {e}")

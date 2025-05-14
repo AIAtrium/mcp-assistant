@@ -1,15 +1,20 @@
-import os
 import json
+import os
 from datetime import datetime
-from dotenv import load_dotenv
-from typing import List, Dict
+from typing import cast
+
 from anthropic import Anthropic
-from openai import OpenAI
+from anthropic.types import Message
 from arcadepy import Arcade
-from arcade_utils import get_tools_from_arcade, ModelProvider
-from langfuse.decorators import observe, langfuse_context
-from tool_processor import ToolProcessor
+from dotenv import load_dotenv
+from langfuse.decorators import langfuse_context, observe
+from openai import OpenAI
+from openai.types.chat import ChatCompletion
+
+from arcade_utils import ModelProvider, get_tools_from_arcade
 from llm_utils import LLMMessageCreator
+from plan_exec_agent import State
+from tool_processor import ToolProcessor
 
 load_dotenv()
 
@@ -17,12 +22,12 @@ load_dotenv()
 class StepExecutor:
     def __init__(
         self,
-        default_system_prompt: str = None,
-        user_context: str = None,
-        enabled_clients: List[str] = None,
+        default_system_prompt: str | None = None,
+        user_context: str | None = None,
+        enabled_clients: list[str] | None = None,
     ):
         self.arcade_client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
-        self.tool_processor = ToolProcessor(arcade_client=self.arcade_client)
+        self.tool_processor = ToolProcessor(self.arcade_client)
 
         # Initialize LLM clients
         anthropic_client = (
@@ -94,12 +99,11 @@ class StepExecutor:
                         },
                         "required": ["tool_id"],
                     },
-                }
-                
+                },
             }
         else:
             raise ValueError(f"Unsupported provider: {provider}")
-    
+
     # TODO: alter this to take into account enabled clients
     def get_all_tools(self, provider: ModelProvider):
         # Add a tool reference capability that allows the LLM to reference previous tool outputs
@@ -113,9 +117,9 @@ class StepExecutor:
         input_action: str,
         provider: ModelProvider,
         user_id: str,
-        system_prompt: str = None,
-        langfuse_session_id: str = None,
-        state: Dict = None,
+        system_prompt: str | None = None,
+        langfuse_session_id: str | None = None,
+        state: State | None = None,
     ):
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
@@ -150,9 +154,11 @@ class StepExecutor:
 
             # Handle different response formats based on provider
             if provider == ModelProvider.ANTHROPIC:
+                response = cast(Message, response)
                 response_contents = response.content
             elif provider == ModelProvider.OPENAI:
                 # OpenAI returns a single choice with a message
+                response = cast(ChatCompletion, response)
                 message = response.choices[0].message
                 # Convert OpenAI format to match Anthropic's structure
                 response_contents = []
@@ -164,39 +170,55 @@ class StepExecutor:
                             "type": "tool_use",
                             "name": tool_call.function.name,
                             "input": json.loads(tool_call.function.arguments),
-                            "id": tool_call.id
+                            "id": tool_call.id,
                         })
 
             for content in response_contents:
-                if ('type' in content and content["type"] == "text") or (hasattr(content, "type") and content.type == "text"):
-                    final_text.append(content["text"] if isinstance(content, dict) else content.text)
+                if (
+                    isinstance(content, dict)
+                    and "type" in content
+                    and content["type"] == "text"
+                ) or (hasattr(content, "type") and content.type == "text"):
+                    final_text.append(
+                        content["text"] if isinstance(content, dict) else content.text
+                    )
                     assistant_message_content.append(content)
-                elif ('type' in content and content["type"] == "tool_use") or (hasattr(content, "type") and content.type == "tool_use"):
+                elif (
+                    isinstance(content, dict)
+                    and "type" in content
+                    and content["type"] == "tool_use"
+                ) or (hasattr(content, "type") and content.type == "tool_use"):
                     has_tool_calls = True
-                    tool_name = content["name"] if isinstance(content, dict) else content.name
-                    tool_args = content["input"] if isinstance(content, dict) else content.input
+                    tool_name = (
+                        content["name"] if isinstance(content, dict) else content.name
+                    )
+                    tool_args = (
+                        content["input"] if isinstance(content, dict) else content.input
+                    )
                     tool_id = content["id"] if isinstance(content, dict) else content.id
 
                     # Process the specific tool call
-                    updated_messages, result_content = self.tool_processor.process_tool_call(
-                        tool_name,
-                        tool_args,
-                        tool_id,
-                        content,
-                        assistant_message_content,
-                        messages,
-                        tool_results_context,
-                        final_text,
-                        user_id,
-                        provider,
-                        langfuse_session_id,
+                    updated_messages, result_content = (
+                        self.tool_processor.process_tool_call(
+                            tool_name,
+                            tool_args,  # type: ignore
+                            tool_id,
+                            content,
+                            assistant_message_content,
+                            messages,
+                            tool_results_context,
+                            final_text,
+                            user_id,
+                            provider,
+                            langfuse_session_id,
+                        )
                     )
 
                     # Update conversation context
                     messages = updated_messages
                     if result_content:
                         tool_results_context[tool_id] = result_content
-                    
+
                     # Get next response
                     response = self.message_creator.create_message(
                         provider=provider,
@@ -211,10 +233,18 @@ class StepExecutor:
 
             # If there are no more tool calls, add the final text and break the loop
             if not has_tool_calls:
-                if provider == ModelProvider.ANTHROPIC and len(response.content) > 0:
+                if (
+                    provider == ModelProvider.ANTHROPIC
+                    and len(cast(Message, response).content) > 0
+                ):
+                    response = cast(Message, response)
                     if response.content[0].type == "text":
                         final_text.append(response.content[0].text)
-                elif provider == ModelProvider.OPENAI and response.choices[0].message.content:
+                elif (
+                    provider == ModelProvider.OPENAI
+                    and cast(ChatCompletion, response).choices[0].message.content
+                ):
+                    response = cast(ChatCompletion, response)
                     final_text.append(response.choices[0].message.content)
                 break
 
@@ -259,7 +289,7 @@ def main():
     # Try to import user configurations, override defaults if found
     try:
         print("Loading values from user_inputs.py")
-        import user_inputs
+        import user_inputs  # pyright: ignore[reportMissingImports]
 
         # Override each value individually if it exists in user_inputs
         if hasattr(user_inputs, "INPUT_ACTION"):

@@ -1,15 +1,19 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from anthropic import Anthropic
 from anthropic.types.message import Message
+from langfuse.decorators import langfuse_context, observe
 from openai import OpenAI
 from openai.types.chat.chat_completion import ChatCompletion
-from langfuse.decorators import observe, langfuse_context
+
 from arcade_utils import ModelProvider
 
 
 class LLMMessageCreator:
     def __init__(
-        self, anthropic_client: Anthropic = None, openai_client: OpenAI = None
+        self,
+        anthropic_client: Anthropic | None = None,
+        openai_client: OpenAI | None = None,
     ):
         self.anthropic = anthropic_client
         self.openai = openai_client
@@ -21,8 +25,8 @@ class LLMMessageCreator:
         messages: List[Dict[str, Any]],
         available_tools: List[Dict[str, Any]],
         system_prompt: str,
-        langfuse_session_id: str = None,
-    ):
+        langfuse_session_id: str | None = None,
+    ) -> Message | ChatCompletion:
         """Wrapper method to route to the appropriate model provider."""
         if provider == ModelProvider.ANTHROPIC:
             return self._create_claude_message(
@@ -62,14 +66,14 @@ class LLMMessageCreator:
             langfuse_context.update_current_trace(session_id=langfuse_session_id)
             langfuse_context.flush()
 
-            # Add cost tracking
-            langfuse_context.update_current_observation(
-                usage_details={
-                    "input": response.usage.input_tokens,
-                    "output": response.usage.output_tokens,
-                    "cache_read_input_tokens": response.usage.cache_read_input_tokens,
-                }
-            )
+            if usage := response.usage:
+                langfuse_context.update_current_observation(
+                    usage_details={
+                        "input": usage.input_tokens or 0,
+                        "output": usage.output_tokens or 0,
+                        "cache_read_input_tokens": usage.cache_read_input_tokens or 0,
+                    }
+                )
 
         return response
 
@@ -102,11 +106,11 @@ class LLMMessageCreator:
             langfuse_context.flush()
 
             # Add cost tracking if available
-            if hasattr(response, "usage"):
+            if usage := hasattr(response, "usage") and response.usage:
                 langfuse_context.update_current_observation(
                     usage_details={
-                        "input": response.usage.prompt_tokens,
-                        "output": response.usage.completion_tokens,
+                        "input": usage.prompt_tokens,
+                        "output": usage.completion_tokens,
                     }
                 )
 
