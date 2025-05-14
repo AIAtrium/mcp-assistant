@@ -1,4 +1,4 @@
-import asyncio
+import json
 import operator
 from datetime import datetime
 from typing import Annotated, List, Tuple, Dict, Any, Union
@@ -93,12 +93,14 @@ class PlanExecAgent:
         """
 
         # Get shared planning tools
-        planning_tools = self.get_planning_tools()
+        planning_tools = self.get_planning_tools(state)
 
         # Get available tools to inform the planning
         available_tools = self.step_executor.get_all_tools(state["provider"])
         tool_descriptions = "\n".join(
-            [f"- {tool['name']}: {tool['description']}" for tool in available_tools]
+            [f"- {name}: {description}" 
+             for name, description in [self._get_tool_description(tool, state["provider"]) 
+                                     for tool in available_tools]]
         )
         plan_prompt += (
             f"\n\nYou can use the following tools in your plan:\n{tool_descriptions}"
@@ -115,28 +117,57 @@ class PlanExecAgent:
             state["langfuse_session_id"],
         )
 
-        steps = []
-
-        for content in response.content:
-            if content.type == "tool_use" and content.name == "submit_plan":
-                # Get the plan directly from the tool input
-                steps = content.input.get("plan", [])
-                break
-
-        # Fallback if no tool call was made (should be rare with good prompting)
-        if not steps and response.content and response.content[0].type == "text":
-            print(
-                "Warning: Plan was returned as text rather than tool call. Attempting to parse..."
-            )
-            response_text = response.content[0].text
-            steps = self.extract_plan_from_response(response_text)
-
+        steps = self._extract_plan_from_response(response, state["provider"])
+        
         # If something went wrong
         if not steps:
             steps = ["Error: Could not generate plan"]
 
-        # Return a Plan object instead of a list
         return Plan(steps=steps)
+
+    def _extract_plan_from_response(self, response, provider: ModelProvider) -> List[str]:
+        """Extract plan steps from either Anthropic or OpenAI response."""
+        if provider == ModelProvider.ANTHROPIC:
+            return self._extract_plan_anthropic(response)
+        elif provider == ModelProvider.OPENAI:
+            return self._extract_plan_openai(response)
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+    def _extract_plan_anthropic(self, response) -> List[str]:
+        """Extract plan steps from Anthropic response format."""
+        steps = []
+        for content in response.content:
+            if content.type == "tool_use" and content.name == "submit_plan":
+                steps = content.input.get("plan", [])
+                break
+        
+        # Fallback if no tool call was made
+        if not steps and response.content and response.content[0].type == "text":
+            print("Warning: Plan was returned as text rather than tool call. Attempting to parse...")
+            response_text = response.content[0].text
+            steps = self.extract_plan_from_response(response_text)
+        
+        return steps
+
+    def _extract_plan_openai(self, response) -> List[str]:
+        """Extract plan steps from OpenAI response format."""
+        steps = []
+        message = response.choices[0].message
+        
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                if tool_call.function.name == "submit_plan":
+                    args = json.loads(tool_call.function.arguments)
+                    steps = args.get("plan", [])
+                    break
+        
+        # Fallback if no tool call was made
+        if not steps and message.content:
+            print("Warning: Plan was returned as text rather than tool call. Attempting to parse...")
+            steps = self.extract_plan_from_response(message.content)
+        
+        return steps
 
     @observe()
     def execute_step(self, state: State) -> str:
@@ -266,7 +297,7 @@ class PlanExecAgent:
         """
 
         # Get shared planning tools
-        planning_tools = self.get_planning_tools()
+        planning_tools = self.get_planning_tools(state)
         replan_tools = [planning_tools["plan_tool"], planning_tools["response_tool"]]
 
         messages = [{"role": "user", "content": replan_prompt}]
@@ -279,6 +310,19 @@ class PlanExecAgent:
             state["langfuse_session_id"],
         )
 
+        return self._process_replan_response(response, state)
+
+    def _process_replan_response(self, response, state: State) -> Act:
+        """Process replan response based on provider."""
+        if state["provider"] == ModelProvider.ANTHROPIC:
+            return self._process_replan_anthropic(response, state)
+        elif state["provider"] == ModelProvider.OPENAI:
+            return self._process_replan_openai(response, state)
+        else:
+            raise ValueError(f"Unsupported provider: {state['provider']}")
+
+    def _process_replan_anthropic(self, response, state: State) -> Act:
+        """Process Anthropic replan response."""
         # Process the response to determine the action
         for content in response.content:
             if content.type == "tool_use":
@@ -291,20 +335,36 @@ class PlanExecAgent:
 
         # Fallback if no tool call was made
         if response.content and response.content[0].type == "text":
-            response_text = response.content[0].text
-            # Check if it seems like a final response
-            if (
-                "objective has been achieved" in response_text.lower()
-                or "final response" in response_text.lower()
-            ):
-                return Act(action=Response(response=response_text))
-            else:
-                # Try to extract steps
-                steps = self.extract_plan_from_response(response_text)
-                return Act(action=Plan(steps=steps))
+            return self._handle_text_replan_response(response.content[0].text, state)
 
-        # Default fallback
         return Act(action=Plan(steps=state["current_plan"]))
+
+    def _process_replan_openai(self, response, state: State) -> Act:
+        """Process OpenAI replan response."""
+        message = response.choices[0].message
+        
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                args = json.loads(tool_call.function.arguments)
+                if tool_call.function.name == "submit_plan":
+                    return Act(action=Plan(steps=args.get("plan", [])))
+                elif tool_call.function.name == "submit_final_response":
+                    return Act(action=Response(response=args.get("response", "")))
+
+        # Fallback if no tool call was made
+        if message.content:
+            return self._handle_text_replan_response(message.content, state)
+
+        return Act(action=Plan(steps=state["current_plan"]))
+
+    def _handle_text_replan_response(self, response_text: str, state: State) -> Act:
+        """Handle text response for replan (shared between providers)."""
+        if ("objective has been achieved" in response_text.lower() or 
+            "final response" in response_text.lower()):
+            return Act(action=Response(response=response_text))
+        else:
+            steps = self.extract_plan_from_response(response_text)
+            return Act(action=Plan(steps=steps))
 
     def extract_plan_from_response(self, response_text: str) -> List[str]:
         """
@@ -365,39 +425,80 @@ class PlanExecAgent:
         # If nothing worked, return empty list
         return []
 
-    def get_planning_tools(self):
+    def get_planning_tools(self, state: State):
         """Return common tools used for planning and replanning."""
-        return {
-            "plan_tool": {
-                "name": "submit_plan",
-                "description": "Submit a plan as a JSON array of strings, where each string is a step in the plan",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "plan": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Array of strings where each string is a step in the plan",
-                        }
-                    },
-                    "required": ["plan"],
+        if state["provider"] == ModelProvider.OPENAI:
+            return {
+                "plan_tool": {
+                    "type": "function",
+                    "function": {
+                        "name": "submit_plan",
+                        "description": "Submit a plan as a JSON array of strings, where each string is a step in the plan",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "plan": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Array of strings where each string is a step in the plan",
+                                }
+                            },
+                            "required": ["plan"],
+                        },
+                    }
                 },
-            },
-            "response_tool": {
-                "name": "submit_final_response",
-                "description": "Submit a final response to the user when the objective is achieved",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "response": {
-                            "type": "string",
-                            "description": "Final response to the user",
-                        }
-                    },
-                    "required": ["response"],
+                "response_tool": {
+                    "type": "function",
+                    "function": {
+                        "name": "submit_final_response",
+                        "description": "Submit a final response to the user when the objective is achieved",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "response": {
+                                    "type": "string",
+                                    "description": "Final response to the user",
+                                }
+                            },
+                            "required": ["response"],
+                        },
+                    }
                 },
-            },
-        }
+            }
+        elif state["provider"] == ModelProvider.ANTHROPIC:
+            return {
+                "plan_tool": {
+                    "name": "submit_plan",
+                    "description": "Submit a plan as a JSON array of strings, where each string is a step in the plan",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Array of strings where each string is a step in the plan",
+                            }
+                        },
+                        "required": ["plan"],
+                    },
+                },
+                "response_tool": {
+                    "name": "submit_final_response",
+                    "description": "Submit a final response to the user when the objective is achieved",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "response": {
+                                "type": "string",
+                                "description": "Final response to the user",
+                            }
+                        },
+                        "required": ["response"],
+                    },
+                },
+            }
+        else:
+            raise ValueError(f"Unsupported provider: {state['provider']}")
 
     def extract_final_result(self, text: str) -> str:
         """
@@ -426,7 +527,7 @@ class PlanExecAgent:
         input_action: str,
         provider: ModelProvider = ModelProvider.ANTHROPIC,
         max_iterations: int = 25,
-        user_id: str = "test-user"
+        user_id: str = "david_test"
     ) -> str:
         """
         Execute a complete plan for the given query.
@@ -563,6 +664,29 @@ class PlanExecAgent:
         # Return the final response
         return state["response"]
 
+    def _get_tool_description(self, tool, provider: ModelProvider) -> Tuple[str, str]:
+        """Extract name and description from a tool based on provider format.
+        
+        Args:
+            tool: The tool object from either OpenAI or Anthropic
+            provider: The model provider
+            
+        Returns:
+            Tuple[str, str]: (tool_name, tool_description)
+        """
+        if provider == ModelProvider.OPENAI:
+            # OpenAI tools have a nested function structure
+            if "function" in tool:
+                return (tool["function"]["name"], tool["function"]["description"])
+            # Handle reference tool which might be structured differently
+            elif "name" in tool:
+                return (tool["name"], tool["description"])
+        elif provider == ModelProvider.ANTHROPIC:
+            # Anthropic tools have a flat structure
+            return (tool["name"], tool["description"])
+        
+        raise ValueError(f"Unsupported provider: {provider}")
+
 
 def main():
     """
@@ -608,25 +732,25 @@ def main():
             BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
         if hasattr(user_inputs, "USER_CONTEXT"):
             USER_CONTEXT = user_inputs.USER_CONTEXT
-        if hasattr(user_inputs, "ENABLED_CLIENTS"):
-            ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
-            print(
-                f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
-            )
-        else:
-            ENABLED_CLIENTS = DEFAULT_CLIENTS
+        # if hasattr(user_inputs, "ENABLED_CLIENTS"):
+        #     ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
+        #     print(
+        #         f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
+        #     )
+        # else:
+        #     ENABLED_CLIENTS = DEFAULT_CLIENTS
     except ImportError:
         print("Unable to load values from user_inputs.py found, using default values")
-        ENABLED_CLIENTS = DEFAULT_CLIENTS
+        # ENABLED_CLIENTS = DEFAULT_CLIENTS
 
     # Initialize host with system prompt and user context
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
-        enabled_clients=ENABLED_CLIENTS,
+        #enabled_clients=ENABLED_CLIENTS,
     )
 
-    result = host.execute_plan(INPUT_ACTION)
+    result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.ANTHROPIC)
     print(result)
 
 

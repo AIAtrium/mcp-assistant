@@ -135,6 +135,7 @@ class ToolProcessor:
             tool_input = tool_args if isinstance(tool_args, dict) else eval(tool_args)
 
             # Execute the tool
+            # NOTE: arcade has rate limits on the free plan
             response: ExecuteToolResponse = self.arcade_client.tools.execute(
                 tool_name=tool_name,
                 input=tool_input,

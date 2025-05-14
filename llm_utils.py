@@ -91,7 +91,7 @@ class LLMMessageCreator:
         all_messages = [{"role": "system", "content": system_prompt}] + messages
 
         response: ChatCompletion = self.openai.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=all_messages,
             tools=available_tools,
             tool_choice="auto",
