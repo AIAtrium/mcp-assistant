@@ -6,7 +6,7 @@ This is an AI assistant that runs using MCP.
 ### Basic Setup
 First create a python venv then `pip install -r requirements.txt`.
 
-This application uses [Arcade](https://www.arcade.dev/) to facilitate tool use so you don't need to run any local MCP servers or connect to any remotely in the cloud. Please sign up for Arcade and get a free api key to use this repo. 
+This application uses [Arcade](https://www.arcade.dev/) to facilitate tool use so you don't need to run any local MCP servers or connect to any remotely in the cloud. Please sign up for Arcade and get [a free api key here](https://api.arcade.dev/dashboard/api-keys) once registered to use this repo. 
 
 Set the following enviroment variables in an `.env` file in the project root:
 ```
@@ -14,7 +14,7 @@ ANTHROPIC_API_KEY=
 ARCADE_API_KEY=
 OPENAI_API_KEY=
 ```
-You only need one LLM key. This repo only supports OpenAI and Anthropic models currently. 
+You **only need ONE LLM key**. This repo only supports OpenAI and Anthropic models currently. 
 
 ### Observability and tracing
 This project uses [Langfuse](https://github.com/langfuse/langfuse) for observability and tracing. Its not mandatory but its helpful to see the dozens of LLM calls that occur nicely formatted in a UI. To utilize it, set these environment variables in the `.env`:
