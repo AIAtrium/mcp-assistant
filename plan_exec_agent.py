@@ -1,12 +1,14 @@
 import json
 import operator
 from datetime import datetime
-from typing import Annotated, List, Tuple, Dict, Any, Union
-from step_executor import StepExecutor
-from typing_extensions import TypedDict
+from typing import Annotated, Any
+
+from langfuse.decorators import observe
 from pydantic import BaseModel, Field
-from langfuse.decorators import observe, langfuse_context
+from typing_extensions import TypedDict
+
 from arcade_utils import ModelProvider
+from step_executor import StepExecutor
 
 DEFAULT_CLIENTS = [
     "Google Calendar",
@@ -22,18 +24,19 @@ DEFAULT_CLIENTS = [
 class State(TypedDict):
     input: str
     provider: ModelProvider
-    inital_plan: List[str]
-    current_plan: List[str]
-    past_steps: Annotated[List[Tuple], operator.add]
+    initial_plan: list[str]
+    current_plan: list[str]
+    past_steps: Annotated[list[tuple], operator.add]
     response: str
     langfuse_session_id: str
-    tool_results: Dict[str, Any]
+    tool_results: dict[str, Any]
+    user_id: str
 
 
 class Plan(BaseModel):
     """Plan to follow in future"""
 
-    steps: List[str] = Field(
+    steps: list[str] = Field(
         description="different steps to follow, should be in sorted order"
     )
 
@@ -47,7 +50,7 @@ class Response(BaseModel):
 class Act(BaseModel):
     """Action to perform."""
 
-    action: Union[Response, Plan] = Field(
+    action: Response | Plan = Field(
         description="Action to perform. If you want to respond to user, use Response. "
         "If you need to further use tools to get the answer, use Plan."
     )
@@ -56,15 +59,15 @@ class Act(BaseModel):
 class PlanExecAgent:
     def __init__(
         self,
-        default_system_prompt: str = None,
-        user_context: str = None,
-        enabled_clients: List[str] = None,
+        default_system_prompt: str | None = None,
+        user_context: str | None = None,
+        enabled_clients: list[str] | None = None,
     ):
         self.step_executor = StepExecutor(
             default_system_prompt, user_context, enabled_clients
         )
 
-    @observe()
+    @observe(as_type="trace")  # pyright:ignore[reportArgumentType]
     def initial_plan(self, state: State) -> Plan:
         """Generate an initial plan based on the user's query."""
 
@@ -97,11 +100,13 @@ class PlanExecAgent:
 
         # Get available tools to inform the planning
         available_tools = self.step_executor.get_all_tools(state["provider"])
-        tool_descriptions = "\n".join(
-            [f"- {name}: {description}" 
-             for name, description in [self._get_tool_description(tool, state["provider"]) 
-                                     for tool in available_tools]]
-        )
+        tool_descriptions = "\n".join([
+            f"- {name}: {description}"
+            for name, description in [
+                self._get_tool_description(tool, state["provider"])
+                for tool in available_tools
+            ]
+        ])
         plan_prompt += (
             f"\n\nYou can use the following tools in your plan:\n{tool_descriptions}"
         )
@@ -118,14 +123,16 @@ class PlanExecAgent:
         )
 
         steps = self._extract_plan_from_response(response, state["provider"])
-        
+
         # If something went wrong
         if not steps:
             steps = ["Error: Could not generate plan"]
 
         return Plan(steps=steps)
 
-    def _extract_plan_from_response(self, response, provider: ModelProvider) -> List[str]:
+    def _extract_plan_from_response(
+        self, response, provider: ModelProvider
+    ) -> list[str]:
         """Extract plan steps from either Anthropic or OpenAI response."""
         if provider == ModelProvider.ANTHROPIC:
             return self._extract_plan_anthropic(response)
@@ -134,39 +141,43 @@ class PlanExecAgent:
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
-    def _extract_plan_anthropic(self, response) -> List[str]:
+    def _extract_plan_anthropic(self, response) -> list[str]:
         """Extract plan steps from Anthropic response format."""
         steps = []
         for content in response.content:
             if content.type == "tool_use" and content.name == "submit_plan":
                 steps = content.input.get("plan", [])
                 break
-        
+
         # Fallback if no tool call was made
         if not steps and response.content and response.content[0].type == "text":
-            print("Warning: Plan was returned as text rather than tool call. Attempting to parse...")
+            print(
+                "Warning: Plan was returned as text rather than tool call. Attempting to parse..."
+            )
             response_text = response.content[0].text
             steps = self.extract_plan_from_response(response_text)
-        
+
         return steps
 
-    def _extract_plan_openai(self, response) -> List[str]:
+    def _extract_plan_openai(self, response) -> list[str]:
         """Extract plan steps from OpenAI response format."""
         steps = []
         message = response.choices[0].message
-        
+
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 if tool_call.function.name == "submit_plan":
                     args = json.loads(tool_call.function.arguments)
                     steps = args.get("plan", [])
                     break
-        
+
         # Fallback if no tool call was made
         if not steps and message.content:
-            print("Warning: Plan was returned as text rather than tool call. Attempting to parse...")
+            print(
+                "Warning: Plan was returned as text rather than tool call. Attempting to parse..."
+            )
             steps = self.extract_plan_from_response(message.content)
-        
+
         return steps
 
     @observe()
@@ -206,7 +217,7 @@ class PlanExecAgent:
 
         objective_context = f"## Your objective:\n{state['input']}\n\n"
         plan_context = (
-            f"## Overall plan:\n"
+            "## Overall plan:\n"
             + "\n".join([f"{i + 1}. {s}" for i, s in enumerate(state["current_plan"])])
             + "\n\n"
         )
@@ -342,7 +353,7 @@ class PlanExecAgent:
     def _process_replan_openai(self, response, state: State) -> Act:
         """Process OpenAI replan response."""
         message = response.choices[0].message
-        
+
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 args = json.loads(tool_call.function.arguments)
@@ -359,14 +370,16 @@ class PlanExecAgent:
 
     def _handle_text_replan_response(self, response_text: str, state: State) -> Act:
         """Handle text response for replan (shared between providers)."""
-        if ("objective has been achieved" in response_text.lower() or 
-            "final response" in response_text.lower()):
+        if (
+            "objective has been achieved" in response_text.lower()
+            or "final response" in response_text.lower()
+        ):
             return Act(action=Response(response=response_text))
         else:
             steps = self.extract_plan_from_response(response_text)
             return Act(action=Plan(steps=steps))
 
-    def extract_plan_from_response(self, response_text: str) -> List[str]:
+    def extract_plan_from_response(self, response_text: str) -> list[str]:
         """
         Extract a plan (list of steps) from Claude's response text.
         Handles various formats including JSON, markdown lists, and numbered lists.
@@ -445,7 +458,7 @@ class PlanExecAgent:
                             },
                             "required": ["plan"],
                         },
-                    }
+                    },
                 },
                 "response_tool": {
                     "type": "function",
@@ -462,7 +475,7 @@ class PlanExecAgent:
                             },
                             "required": ["response"],
                         },
-                    }
+                    },
                 },
             }
         elif state["provider"] == ModelProvider.ANTHROPIC:
@@ -521,13 +534,13 @@ class PlanExecAgent:
             cleaned_text = re.sub(r"\[Calling tool.*?\]", "", text)
             return cleaned_text.strip()
 
-    @observe(as_type="trace")
+    @observe()
     def execute_plan(
         self,
         input_action: str,
         provider: ModelProvider = ModelProvider.ANTHROPIC,
         max_iterations: int = 25,
-        user_id: str = "david_test"
+        user_id: str = "david_test",
     ) -> str:
         """
         Execute a complete plan for the given query.
@@ -546,7 +559,7 @@ class PlanExecAgent:
             The final response to the user's query
         """
         # Initialize state with values needed for the entire lifecycle
-        state = {
+        state: State = {
             "input": input_action,
             "langfuse_session_id": datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
             "past_steps": [],
@@ -577,7 +590,7 @@ class PlanExecAgent:
             print(f"Executing step: {current_step}")
 
             result = self.execute_step(state)
-            print(f"Step execution completed")
+            print("Step execution completed")
 
             # Update past_steps with the completed step and its result
             state["past_steps"].append((current_step, result))
@@ -664,13 +677,13 @@ class PlanExecAgent:
         # Return the final response
         return state["response"]
 
-    def _get_tool_description(self, tool, provider: ModelProvider) -> Tuple[str, str]:
+    def _get_tool_description(self, tool, provider: ModelProvider) -> tuple[str, str]:
         """Extract name and description from a tool based on provider format.
-        
+
         Args:
             tool: The tool object from either OpenAI or Anthropic
             provider: The model provider
-            
+
         Returns:
             Tuple[str, str]: (tool_name, tool_description)
         """
@@ -684,7 +697,7 @@ class PlanExecAgent:
         elif provider == ModelProvider.ANTHROPIC:
             # Anthropic tools have a flat structure
             return (tool["name"], tool["description"])
-        
+
         raise ValueError(f"Unsupported provider: {provider}")
 
 
@@ -723,7 +736,7 @@ def main():
     # Try to import user configurations, override defaults if found
     try:
         print("Loading values from user_inputs.py")
-        import user_inputs
+        import user_inputs  # type: ignore
 
         # Override each value individually if it exists in user_inputs
         if hasattr(user_inputs, "INPUT_ACTION"):
@@ -747,7 +760,7 @@ def main():
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
-        #enabled_clients=ENABLED_CLIENTS,
+        # enabled_clients=ENABLED_CLIENTS,
     )
 
     result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.ANTHROPIC)

@@ -1,31 +1,32 @@
 import json
-from typing import Dict, List, Tuple, Any
-from langfuse.decorators import observe
-from langfuse.decorators import langfuse_context
+from typing import Any
+
 from arcadepy import Arcade
 from arcadepy.types import ExecuteToolResponse
+from langfuse.decorators import langfuse_context, observe
+
 from arcade_utils import ModelProvider
 
 
 class ToolProcessor:
-    def __init__(self, arcade_client: Arcade = None):
+    def __init__(self, arcade_client: Arcade):
         self.arcade_client = arcade_client
 
-    @observe(as_type="tool")
+    @observe(as_type="tool")  # pyright:ignore[reportArgumentType]
     def process_tool_call(
         self,
         tool_name: str,
-        tool_args: Dict[str, Any],
+        tool_args: dict[str, Any],
         tool_id: str,
         content: Any,
-        assistant_message_content: List[Any],
-        messages: List[Dict[str, Any]],
-        tool_results_context: Dict[str, Any],
-        final_text: List[str],
+        assistant_message_content: list[Any],
+        messages: list[dict[str, Any]],
+        tool_results_context: dict[str, Any],
+        final_text: list[str],
         user_id: str,
         provider: ModelProvider,
-        langfuse_session_id: str = None,
-    ) -> Tuple[List[Dict[str, Any]], Any]:
+        langfuse_session_id: str | None = None,
+    ) -> tuple[list[dict[str, Any]], Any]:
         """
         Process a specific tool call and return updated messages and result content.
 
@@ -58,21 +59,21 @@ class ToolProcessor:
                 messages,
                 final_text,
                 user_id,
-                provider
+                provider,
             )
 
     def _handle_reference_tool(
         self,
         tool_id: str,
-        tool_args: Dict[str, Any],
+        tool_args: dict[str, Any],
         content: Any,
-        assistant_message_content: List[Any],
-        messages: List[Dict[str, Any]],
-        tool_results_context: Dict[str, Any],
-    ) -> Tuple[List[Dict[str, Any]], Any]:
+        assistant_message_content: list[Any],
+        messages: list[dict[str, Any]],
+        tool_results_context: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], Any]:
         """Handle reference_tool_output tool."""
         referenced_tool_id = tool_args["tool_id"]
-        extract_path = tool_args.get("extract_path", None)
+        extract_path = tool_args.get("extract_path", ".")
         result_content = None
 
         if referenced_tool_id in tool_results_context:
@@ -85,7 +86,12 @@ class ToolProcessor:
             )
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content, ModelProvider.ANTHROPIC
+            tool_id,
+            content,
+            assistant_message_content,
+            messages,
+            result_content,
+            ModelProvider.ANTHROPIC,
         )
 
     def _extract_reference_data(self, result_content: Any, extract_path: str) -> str:
@@ -109,15 +115,15 @@ class ToolProcessor:
     def _handle_standard_tool(
         self,
         tool_name: str,
-        tool_args: Dict[str, Any],
+        tool_args: dict[str, Any],
         tool_id: str,
         content: Any,
-        assistant_message_content: List[Any],
-        messages: List[Dict[str, Any]],
-        final_text: List[str],
+        assistant_message_content: list[Any],
+        messages: list[dict[str, Any]],
+        final_text: list[str],
         user_id: str,
         provider: ModelProvider,
-    ) -> Tuple[List[Dict[str, Any]], str]:
+    ) -> tuple[list[dict[str, Any]], str]:
         """Handle standard tools using Arcade's tool execution flow."""
         try:
             # First authorize the tool
@@ -145,7 +151,7 @@ class ToolProcessor:
             final_text.append(f"[Executing tool {tool_name} with args {tool_input}]")
 
             # Handle the response
-            if response.success:
+            if response.success and response.output:
                 output = response.output
                 if output.error:
                     result_content = f"Error: {output.error.message}"
@@ -165,52 +171,64 @@ class ToolProcessor:
             result_content = error_message
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content, provider
+            tool_id,
+            content,
+            assistant_message_content,
+            messages,
+            result_content,
+            provider,
         )
 
     def _create_tool_response(
         self,
         tool_id: str,
         content: Any,
-        assistant_message_content: List[Any],
-        messages: List[Dict[str, Any]],
+        assistant_message_content: list[Any],
+        messages: list[dict[str, Any]],
         result_content: str,
         provider: ModelProvider,
-    ) -> Tuple[List[Dict[str, Any]], str]:
+    ) -> tuple[list[dict[str, Any]], str]:
         """Create a standardized tool response format."""
         updated_messages = messages.copy()
 
         if provider == ModelProvider.ANTHROPIC:
             # Anthropic format
             assistant_message_content.append(content)
-            updated_messages.append({"role": "assistant", "content": assistant_message_content})
+            updated_messages.append({
+                "role": "assistant",
+                "content": assistant_message_content,
+            })
             updated_messages.append({
                 "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": tool_id,
-                    "content": result_content,
-                }]
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": result_content,
+                    }
+                ],
             })
         else:
             # OpenAI format
             tool_name = content["name"] if isinstance(content, dict) else content.name
             tool_args = content["input"] if isinstance(content, dict) else content.input
-            
+
             # Add the assistant's message with the tool call
             updated_messages.append({
                 "role": "assistant",
                 "content": None,  # Content is null when there's a tool call
-                "tool_calls": [{
-                    "id": tool_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": json.dumps(tool_args)
+                "tool_calls": [
+                    {
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json.dumps(tool_args),
+                        },
                     }
-                }]
+                ],
             })
-            
+
             # Add the tool result
             updated_messages.append({
                 "role": "tool",

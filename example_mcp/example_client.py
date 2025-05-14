@@ -1,12 +1,15 @@
 import asyncio
-from typing import Optional
 from contextlib import AsyncExitStack
 
+from anthropic import Anthropic
+from anthropic.types import MessageParam as ClaudeMessageParam
+from anthropic.types import ToolParam
+from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from mcp.types import TextResourceContents, BlobResourceContents
-from anthropic import Anthropic
-from dotenv import load_dotenv
+from mcp.types import BlobResourceContents, ListToolsResult, TextResourceContents
+
+from mcp_assistant.errors import UninitializedSession
 
 load_dotenv()  # load environment variables from .env
 
@@ -16,7 +19,7 @@ load_dotenv()  # load environment variables from .env
 class ExampleMCPClient:
     def __init__(self):
         # Initialize session and client objects
-        self.session: Optional[ClientSession] = None
+        self.session: ClientSession | None = None
         self.exit_stack = AsyncExitStack()
         self.anthropic = Anthropic()
 
@@ -39,6 +42,7 @@ class ExampleMCPClient:
         stdio_transport = await self.exit_stack.enter_async_context(
             stdio_client(server_params)
         )
+
         self.stdio, self.write = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
             ClientSession(self.stdio, self.write)
@@ -68,6 +72,9 @@ class ExampleMCPClient:
         )
 
     async def get_resources_info(self):
+        if not self.session:
+            raise UninitializedSession
+
         resource_response = await self.session.list_resources()
         resources = resource_response.resources
 
@@ -87,23 +94,26 @@ class ExampleMCPClient:
 
     async def process_query(self, query: str) -> str:
         """Process a query using Claude and available tools"""
+        if not self.session:
+            raise UninitializedSession
+
         resources_info = await self.get_resources_info()
         query += resources_info
 
-        messages = [{"role": "user", "content": query}]
+        messages: list[ClaudeMessageParam] = [{"role": "user", "content": query}]
 
-        response = await self.session.list_tools()
-        server_tools = [
-            {
+        list_tools_response: ListToolsResult = await self.session.list_tools()
+        server_tools: list[ToolParam] = [
+            ToolParam(**{
                 "name": tool.name,
                 "description": tool.description,
                 "input_schema": tool.inputSchema,
-            }
-            for tool in response.tools
+            })
+            for tool in list_tools_response.tools
         ]
 
         # Add custom resource access tool
-        resource_access_tool = {
+        resource_access_tool: ToolParam = {
             "name": "access_resource",
             "description": "Access a resource from the MCP server",
             "input_schema": {
@@ -147,9 +157,10 @@ class ExampleMCPClient:
                     final_text.append(f"[Accessing resource {uri}]")
 
                     assistant_message_content.append(content)
-                    messages.append(
-                        {"role": "assistant", "content": assistant_message_content}
-                    )
+                    messages.append({
+                        "role": "assistant",
+                        "content": assistant_message_content,
+                    })
 
                     # Format the resource result as a tool result
                     resource_result_content = []
@@ -159,18 +170,16 @@ class ExampleMCPClient:
                         elif isinstance(resource_content, BlobResourceContents):
                             resource_result_content.append(str(resource_content.blob))
 
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": content.id,
-                                    "content": "\n".join(resource_result_content),
-                                }
-                            ],
-                        }
-                    )
+                    messages.append({
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": content.id,
+                                "content": "\n".join(resource_result_content),
+                            }
+                        ],
+                    })
 
                 else:
                     # Execute tool call
@@ -180,21 +189,20 @@ class ExampleMCPClient:
                     )
 
                     assistant_message_content.append(content)
-                    messages.append(
-                        {"role": "assistant", "content": assistant_message_content}
-                    )
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": content.id,
-                                    "content": result.content,
-                                }
-                            ],
-                        }
-                    )
+                    messages.append({
+                        "role": "assistant",
+                        "content": assistant_message_content,
+                    })
+                    messages.append({
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": content.id,
+                                "content": result.content,
+                            }
+                        ],
+                    })
 
                 # Get next response from Claude
                 response = self.anthropic.messages.create(
