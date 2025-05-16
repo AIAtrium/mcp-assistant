@@ -7,9 +7,9 @@ from anthropic import Anthropic
 from openai import OpenAI
 from arcadepy import Arcade
 from langfuse.decorators import observe, langfuse_context
-from src.arcade_utils import get_tools_from_arcade, ModelProvider
-from src.tool_processor import ToolProcessor
-from src.llm_utils import LLMMessageCreator
+from .arcade_utils import get_tools_from_arcade, ModelProvider
+from .tool_processor import ToolProcessor
+from .llm_utils import LLMMessageCreator
 
 load_dotenv()
 

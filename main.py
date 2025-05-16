@@ -38,41 +38,42 @@ Do the following:
 5) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
 """
 
+# Try to import user configurations, override defaults if found
+try:
+    print("Loading values from user_inputs.py")
+    import user_inputs
+
+    # Override each value individually if it exists in user_inputs
+    if hasattr(user_inputs, "INPUT_ACTION"):
+        INPUT_ACTION = user_inputs.INPUT_ACTION
+    if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
+        BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
+    if hasattr(user_inputs, "USER_CONTEXT"):
+        USER_CONTEXT = user_inputs.USER_CONTEXT
+    # if hasattr(user_inputs, "ENABLED_CLIENTS"):
+    #     ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
+    #     print(
+    #         f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
+    #     )
+    # else:
+    #     ENABLED_CLIENTS = DEFAULT_CLIENTS
+except ImportError:
+    print("Unable to load values from user_inputs.py found, using default values")
+    # ENABLED_CLIENTS = DEFAULT_CLIENTS
+
 def main():
     """
     This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
     Configuration can be customized in user_inputs.py, or will use defaults if not found.
     """
-
-    # Try to import user configurations, override defaults if found
-    try:
-        print("Loading values from user_inputs.py")
-        import user_inputs
-
-        # Override each value individually if it exists in user_inputs
-        if hasattr(user_inputs, "INPUT_ACTION"):
-            INPUT_ACTION = user_inputs.INPUT_ACTION
-        if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
-            BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
-        if hasattr(user_inputs, "USER_CONTEXT"):
-            USER_CONTEXT = user_inputs.USER_CONTEXT
-        # if hasattr(user_inputs, "ENABLED_CLIENTS"):
-        #     ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
-        #     print(
-        #         f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
-        #     )
-        # else:
-        #     ENABLED_CLIENTS = DEFAULT_CLIENTS
-    except ImportError:
-        print("Unable to load values from user_inputs.py found, using default values")
-        # ENABLED_CLIENTS = DEFAULT_CLIENTS
-
     # Initialize host with system prompt and user context
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
         #enabled_clients=ENABLED_CLIENTS,
     )
+
+    print(f"INPUT_ACTION: {INPUT_ACTION}")
 
     result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.ANTHROPIC)
     print(result)
@@ -85,31 +86,6 @@ def step_executor():
     Configuration can be customized in user_inputs.py, or will use defaults if not found.
     """
     langfuse_session_id = f"step_executor_{datetime.today().strftime('%Y-%m-%d %H:%M:%S')}"
-
-    # Try to import user configurations, override defaults if found
-    try:
-        print("Loading values from user_inputs.py")
-        import user_inputs
-
-        # Override each value individually if it exists in user_inputs
-        if hasattr(user_inputs, "INPUT_ACTION"):
-            INPUT_ACTION = user_inputs.INPUT_ACTION
-        if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
-            BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
-        if hasattr(user_inputs, "USER_CONTEXT"):
-            USER_CONTEXT = user_inputs.USER_CONTEXT
-
-        # TODO: implement after
-        # if hasattr(user_inputs, "ENABLED_CLIENTS"):
-        #     ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
-        #     print(
-        #         f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
-        #     )
-        # else:
-        #     ENABLED_CLIENTS = DEFAULT_CLIENTS
-    except ImportError:
-        print("Unable to load values from user_inputs.py found, using default values")
-        # ENABLED_CLIENTS = DEFAULT_CLIENTS
 
     print(f"INPUT_ACTION: {INPUT_ACTION}")
 

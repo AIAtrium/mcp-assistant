@@ -4,7 +4,7 @@ from langfuse.decorators import observe
 from langfuse.decorators import langfuse_context
 from arcadepy import Arcade
 from arcadepy.types import ExecuteToolResponse
-from src.arcade_utils import ModelProvider
+from .arcade_utils import ModelProvider
 
 
 class ToolProcessor:
