@@ -20,7 +20,10 @@ AVAILABLE_TOOLS = {
             "Google.ListEmails",
             "Google.SearchThreads",
             "Google.ListThreads",
-            "Google.GetThread"
+            "Google.GetThread",
+            "Google.ChangeEmailLabels",
+            "Google.CreateLabel",
+            "Google.ListLabels" 
         ],
         "Google Calendar": [
             "Google.CreateEvent",

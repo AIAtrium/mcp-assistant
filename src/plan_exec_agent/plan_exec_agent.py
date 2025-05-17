@@ -2,21 +2,11 @@ import json
 import operator
 from datetime import datetime
 from typing import Annotated, List, Tuple, Dict, Any, Union
-from step_executor import StepExecutor
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
-from langfuse.decorators import observe, langfuse_context
-from arcade_utils import ModelProvider
-
-DEFAULT_CLIENTS = [
-    "Google Calendar",
-    "Gmail",
-    "Notion",
-    "Whatsapp",
-    "Exa",
-    "Outlook",
-    "Slack",
-]
+from langfuse.decorators import observe
+from .step_executor import StepExecutor
+from .arcade_utils import ModelProvider
 
 
 class State(TypedDict):
@@ -686,73 +676,3 @@ class PlanExecAgent:
             return (tool["name"], tool["description"])
         
         raise ValueError(f"Unsupported provider: {provider}")
-
-
-def main():
-    """
-    This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
-    Configuration can be customized in user_inputs.py, or will use defaults if not found.
-    """
-    # NOTE: these are Default values you can override in user_inputs.py
-    DATE = datetime.today().strftime("%Y-%m-%d")
-    NOTION_PAGE_TITLE = "Daily Briefings"
-
-    USER_CONTEXT = """
-    I am David, the CTO / Co-Founder of a pre-seed startup based in San Francisco. 
-    I handle all the coding and product development.
-    We are a two person team, with my co-founder handling sales, marketing, and business development.
-    
-    When looking at my calendar, if you see anything titled 'b', that means it's a blocker.
-    I often put blockers before or after calls that could go long.
-    """
-
-    BASE_SYSTEM_PROMPT = """
-    You are a helpful assistant.
-    """
-
-    INPUT_ACTION = f"""
-    Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
-    Do the following:
-    1) check my gmail, look for unread emails and tell me if any are high priority
-    2) check my google calendar, look for events from today and give me a summary of the events. 
-    3) Go to the 'Development Board V2' Notion page, look for any 'Scheduled' or 'In progress' cards assigned to me and give me a quick summary of every ticket. 
-    4) Tell me if I have any unread messages on whatsapp. You should search at least the last 10 message threads. If not, say "No unread messages on whatsapp"
-    5) Write the output from the above steps into a new page in my Notion in the '{NOTION_PAGE_TITLE}' page. Title the entry '{DATE}', which is today's date. 
-    """
-
-    # Try to import user configurations, override defaults if found
-    try:
-        print("Loading values from user_inputs.py")
-        import user_inputs
-
-        # Override each value individually if it exists in user_inputs
-        if hasattr(user_inputs, "INPUT_ACTION"):
-            INPUT_ACTION = user_inputs.INPUT_ACTION
-        if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
-            BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
-        if hasattr(user_inputs, "USER_CONTEXT"):
-            USER_CONTEXT = user_inputs.USER_CONTEXT
-        # if hasattr(user_inputs, "ENABLED_CLIENTS"):
-        #     ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
-        #     print(
-        #         f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
-        #     )
-        # else:
-        #     ENABLED_CLIENTS = DEFAULT_CLIENTS
-    except ImportError:
-        print("Unable to load values from user_inputs.py found, using default values")
-        # ENABLED_CLIENTS = DEFAULT_CLIENTS
-
-    # Initialize host with system prompt and user context
-    host = PlanExecAgent(
-        default_system_prompt=BASE_SYSTEM_PROMPT,
-        user_context=USER_CONTEXT,
-        #enabled_clients=ENABLED_CLIENTS,
-    )
-
-    result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.ANTHROPIC)
-    print(result)
-
-
-if __name__ == "__main__":
-    main()

@@ -1,15 +1,14 @@
 import os
 import json
-from datetime import datetime
 from dotenv import load_dotenv
 from typing import List, Dict
 from anthropic import Anthropic
 from openai import OpenAI
 from arcadepy import Arcade
-from arcade_utils import get_tools_from_arcade, ModelProvider
 from langfuse.decorators import observe, langfuse_context
-from tool_processor import ToolProcessor
-from llm_utils import LLMMessageCreator
+from .arcade_utils import get_tools_from_arcade, ModelProvider
+from .tool_processor import ToolProcessor
+from .llm_utils import LLMMessageCreator
 
 load_dotenv()
 
@@ -225,79 +224,5 @@ class StepExecutor:
         return "\n".join(final_text)
 
 
-def main():
-    """
-    This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
-    Configuration can be customized in user_inputs.py, or will use defaults if not found.
-    """
-    # NOTE: the are Default values you can override in user_inputs.py
-    DATE = datetime.today().strftime("%Y-%m-%d")
-    NOTION_PAGE_TITLE = "Daily Briefings"
-    LANGFUSE_SESSION_ID = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-
-    USER_CONTEXT = """
-    I am David, the CTO / Co-Founder of a pre-seed startup based in San Francisco. 
-    I handle all the coding and product development.
-    We are a two person team, with my co-founder handling sales, marketing, and business development.
-    
-    When looking at my calendar, if you see anything titled 'b', that means it's a blocker.
-    I often put blockers before or after calls that could go long.
-    """
-
-    BASE_SYSTEM_PROMPT = """
-    You are a helpful assistant.
-    """
-
-    INPUT_ACTION = f"""
-    Your goal is to create a daily briefing for today, {DATE}, from my gmail and google calendar.
-    Do the following:
-    1) check my gmail, look for unread emails and tell me if any are high priority
-    2) check my google calendar, look for events from today and give me a summary of the events. 
-    3) create a draft emails in my gmail inbox with a summary of the above information. DO NOT SEND THE EMAIL.
-    """
-
-    # Try to import user configurations, override defaults if found
-    try:
-        print("Loading values from user_inputs.py")
-        import user_inputs
-
-        # Override each value individually if it exists in user_inputs
-        if hasattr(user_inputs, "INPUT_ACTION"):
-            INPUT_ACTION = user_inputs.INPUT_ACTION
-        if hasattr(user_inputs, "BASE_SYSTEM_PROMPT"):
-            BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
-        if hasattr(user_inputs, "USER_CONTEXT"):
-            USER_CONTEXT = user_inputs.USER_CONTEXT
-
-        # TODO: implement after
-        # if hasattr(user_inputs, "ENABLED_CLIENTS"):
-        #     ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
-        #     print(
-        #         f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
-        #     )
-        # else:
-        #     ENABLED_CLIENTS = DEFAULT_CLIENTS
-    except ImportError:
-        print("Unable to load values from user_inputs.py found, using default values")
-        # ENABLED_CLIENTS = DEFAULT_CLIENTS
-
-    print(f"INPUT_ACTION: {INPUT_ACTION}")
-
-    # Initialize host with default system prompt and enabled clients
-    executor = StepExecutor(
-        default_system_prompt=BASE_SYSTEM_PROMPT,
-        user_context=USER_CONTEXT,
-        # enabled_clients=ENABLED_CLIENTS,
-    )
-
-    result = executor.process_input_with_agent_loop(
-        input_action=INPUT_ACTION,
-        provider=ModelProvider.OPENAI,
-        user_id="david_test",
-        langfuse_session_id=LANGFUSE_SESSION_ID,
-    )
-    print(result)
 
 
-if __name__ == "__main__":
-    main()

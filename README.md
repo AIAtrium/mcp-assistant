@@ -32,21 +32,21 @@ The default workflow generates a **daily briefing** over various tools like emai
 
 ### Run the Default Flow - Daily Briefing in Notion
 1. Create a Notion page called `Daily Briefings`. Ideally this should be at the root of your Notion workspace.   
-2. Update the `user_context` in `main` in `plan_exec_agent.py` with a description of who you are, how you like to work (like what communication tools you prefer) and any extra information that will make the model's output better. Update the `base_system_prompt` with any special instructions you want it to take into account. 
-3. The instructions for the LLM on *how* to generate the daily briefing are in the  `query` variable in `plan_exec_agent.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
+2. Update the `user_context` in `main` in `main.py` with a description of who you are, how you like to work (like what communication tools you prefer) and any extra information that will make the model's output better. Update the `base_system_prompt` with any special instructions you want it to take into account. 
+3. The instructions for the LLM on *how* to generate the daily briefing are in the  `INPUT_ACTION` variable in `main.py` in the `main` method. Change the step-by-step instructions based on how you want you daily briefing created.  
 For example, if you want the briefing to also check a specific Notion page that has your tasks, the model can also do this
 4. (Optional) You can alter the `DEFAULT_TOOLS` array at the top of `plan_exec_agent
 .py` to have only these values `["Gmail", "Google Calendar", "Whatsapp", "Exa", "Notion"]` so you don't have to set up every MCP server
-5. run `python plan_exec_agent.py` to create a daily briefing one time. 
+5. run `python main.py` to create a daily briefing one time. 
 
 ### Run your own Custom Flow
 Create a file called `user_inputs.py` in root directory then add the following constant variables that will control how the assistant runs:
-1. `QUERY` - your request for the MCP assistant
+1. `INPUT_ACTION` - your request for the MCP assistant
 2. `USER_CONTEXT` - background information on who you are, what your preferences are, how you like to work, etc. Helps the model produce better output
 3. `BASE_SYSTEM_PROMPT` - any special instructions the model may need to take into account beyond your user preferences. defaults to 'you are a helpful assistant'
 4. `ENABLED_CLIENTS` - an array of strings containing the names of the MCP servers you want the system to have access to. Make sure they are the same names as those used in the `mcp_clients/` implementations. This will allow you to omit, for example, outlook, and still have the system run without issue
 
-Then run `python plan_exec_agent.py` to see the result
+Then run `python main.py` to see the result
 
 ## Future Work
 

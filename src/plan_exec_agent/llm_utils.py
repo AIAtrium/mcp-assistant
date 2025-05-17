@@ -4,7 +4,7 @@ from anthropic.types.message import Message
 from openai import OpenAI
 from openai.types.chat.chat_completion import ChatCompletion
 from langfuse.decorators import observe, langfuse_context
-from arcade_utils import ModelProvider
+from .arcade_utils import ModelProvider
 
 
 class LLMMessageCreator:
