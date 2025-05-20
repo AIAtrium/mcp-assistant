@@ -5,7 +5,7 @@ from src.plan_exec_agent import PlanExecAgent, ModelProvider, StepExecutor
 DEFAULT_TOOLKITS = [
     "google",
     "slack",
-    "notion"
+    "NotionToolkit"
 ]
 
 # NOTE: these are Default values you can override in user_inputs.py
