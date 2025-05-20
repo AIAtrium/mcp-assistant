@@ -517,7 +517,8 @@ class PlanExecAgent:
         input_action: str,
         provider: ModelProvider = ModelProvider.ANTHROPIC,
         max_iterations: int = 25,
-        user_id: str = "david_test"
+        user_id: str = "david_test",
+        langfuse_session_id: str = None
     ) -> str:
         """
         Execute a complete plan for the given query.
@@ -535,10 +536,12 @@ class PlanExecAgent:
         Returns:
             The final response to the user's query
         """
+        langfuse_session_id = langfuse_session_id or datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+        
         # Initialize state with values needed for the entire lifecycle
         state = {
             "input": input_action,
-            "langfuse_session_id": datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
+            "langfuse_session_id": langfuse_session_id,
             "past_steps": [],
             "current_plan": [],
             "tool_results": {},
