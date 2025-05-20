@@ -106,7 +106,7 @@ class PlanExecAgent:
             messages,
             [planning_tools["plan_tool"]],
             plan_system_prompt,
-            state["langfuse_session_id"],
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
         )
 
         steps = self._extract_plan_from_response(response, state["provider"])
@@ -299,7 +299,7 @@ class PlanExecAgent:
             messages,
             replan_tools,
             replan_system_prompt,
-            state["langfuse_session_id"],
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
         )
 
         return self._process_replan_response(response, state)

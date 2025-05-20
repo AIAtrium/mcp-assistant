@@ -1,11 +1,10 @@
 from datetime import datetime
 from src.plan_exec_agent import PlanExecAgent, ModelProvider, StepExecutor
 
+# deliebrately omit Github and Microsoft during testing
 DEFAULT_TOOLKITS = [
     "google",
     "slack",
-    "microsoft",
-    "github",
     "notion"
 ]
 
@@ -73,7 +72,7 @@ def main():
 
     print(f"INPUT_ACTION: {INPUT_ACTION}")
 
-    result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.ANTHROPIC)
+    result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.OPENAI)
     print(result)
 
 

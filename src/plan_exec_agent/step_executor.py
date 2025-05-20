@@ -117,6 +117,11 @@ class StepExecutor:
         langfuse_session_id: str = None,
         state: Dict = None,
     ):
+        """
+        Process the input with the agent loop.
+
+        NOTE: we pass in the langfuse_session_id separately in case there is not a state
+        """
         current_system_prompt = (
             system_prompt if system_prompt is not None else self.system_prompt
         )
@@ -138,7 +143,7 @@ class StepExecutor:
             messages=messages,
             available_tools=available_tools,
             system_prompt=current_system_prompt,
-            langfuse_session_id=langfuse_session_id,
+            langfuse_data={"session_id": langfuse_session_id, "user_id": user_id},
         )
 
         final_text = []
@@ -189,7 +194,7 @@ class StepExecutor:
                         final_text,
                         user_id,
                         provider,
-                        langfuse_session_id,
+                        langfuse_data={"session_id": langfuse_session_id, "user_id": user_id},
                     )
 
                     # Update conversation context
@@ -203,7 +208,7 @@ class StepExecutor:
                         messages=messages,
                         available_tools=available_tools,
                         system_prompt=current_system_prompt,
-                        langfuse_session_id=langfuse_session_id,
+                        langfuse_data={"session_id": langfuse_session_id, "user_id": user_id},
                     )
 
                     # Break the content loop to process the new response

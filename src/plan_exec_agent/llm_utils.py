@@ -21,22 +21,22 @@ class LLMMessageCreator:
         messages: List[Dict[str, Any]],
         available_tools: List[Dict[str, Any]],
         system_prompt: str,
-        langfuse_session_id: str = None,
+        langfuse_data: Dict[str, Any] = None,
     ):
         """Wrapper method to route to the appropriate model provider."""
         if provider == ModelProvider.ANTHROPIC:
             return self._create_claude_message(
-                messages, available_tools, system_prompt, langfuse_session_id
+                messages, available_tools, system_prompt, langfuse_data
             )
         elif provider == ModelProvider.OPENAI:
             return self._create_openai_message(
-                messages, available_tools, system_prompt, langfuse_session_id
+                messages, available_tools, system_prompt, langfuse_data
             )
         else:
             raise ValueError(f"Unsupported model provider: {provider}")
 
     def _create_claude_message(
-        self, messages, available_tools, system_prompt, langfuse_session_id=None
+        self, messages, available_tools, system_prompt, langfuse_data=None
     ):
         """Create a message using Claude API with the given messages and tools."""
         if not self.anthropic:
@@ -46,7 +46,7 @@ class LLMMessageCreator:
         langfuse_context.update_current_observation(
             input=messages,
             model="claude-3-5-sonnet-20241022",
-            session_id=langfuse_session_id,
+            session_id=langfuse_data["session_id"] if langfuse_data and "session_id" in langfuse_data else None
         )
 
         response: Message = self.anthropic.messages.create(
@@ -58,8 +58,8 @@ class LLMMessageCreator:
         )
 
         # if no session id is provided, doesn't flush to langfuse
-        if langfuse_session_id:
-            langfuse_context.update_current_trace(session_id=langfuse_session_id)
+        if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
+            langfuse_context.update_current_trace(session_id=langfuse_data["session_id"], user_id=langfuse_data["user_id"])
             langfuse_context.flush()
 
             # Add cost tracking
@@ -74,7 +74,7 @@ class LLMMessageCreator:
         return response
 
     def _create_openai_message(
-        self, messages, available_tools, system_prompt, langfuse_session_id=None
+        self, messages, available_tools, system_prompt, langfuse_data=None
     ):
         """Create a message using OpenAI API with the given messages and tools."""
         if not self.openai:
@@ -84,7 +84,7 @@ class LLMMessageCreator:
         langfuse_context.update_current_observation(
             input=messages,
             model="gpt-4o",  # adjust as needed
-            session_id=langfuse_session_id,
+            session_id=langfuse_data["session_id"] if langfuse_data and "session_id" in langfuse_data else None,
         )
 
         # Prepare messages with system prompt
@@ -97,8 +97,8 @@ class LLMMessageCreator:
             tool_choice="auto",
         )
 
-        if langfuse_session_id:
-            langfuse_context.update_current_trace(session_id=langfuse_session_id)
+        if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
+            langfuse_context.update_current_trace(session_id=langfuse_data["session_id"], user_id=langfuse_data["user_id"])
             langfuse_context.flush()
 
             # Add cost tracking if available
