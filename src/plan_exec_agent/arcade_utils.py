@@ -49,8 +49,8 @@ AVAILABLE_TOOLS = {
         "github",
         "slack",
         "microsoft",
-        "notion",
-        "google"
+        "google",
+        "NotionToolkit"
     ]
 }
 
@@ -73,11 +73,7 @@ def get_toolkits_from_arcade(arcade_client: Arcade, provider: ModelProvider, ena
     
     tools = []
     for toolkit in enabled_toolkits:
-        if toolkit in AVAILABLE_TOOLS["toolkits"] and toolkit != "notion":
+        if toolkit in AVAILABLE_TOOLS["toolkits"]:
             tools.extend(arcade_client.tools.formatted.list(toolkit=toolkit, format=provider.value))
-
-        elif toolkit == "notion":
-            for tool in AVAILABLE_TOOLS["tools"]["Notion"]:
-                tools.append(arcade_client.tools.formatted.get(name=tool, format=provider.value))
 
     return tools
