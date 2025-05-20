@@ -1,14 +1,12 @@
 from datetime import datetime
 from src.plan_exec_agent import PlanExecAgent, ModelProvider, StepExecutor
 
-DEFAULT_CLIENTS = [
-    "Google Calendar",
-    "Gmail",
-    "Notion",
-    "Whatsapp",
-    "Exa",
-    "Outlook",
-    "Slack",
+DEFAULT_TOOLKITS = [
+    "google",
+    "slack",
+    "microsoft",
+    "github",
+    "notion"
 ]
 
 # NOTE: these are Default values you can override in user_inputs.py
@@ -50,16 +48,16 @@ try:
         BASE_SYSTEM_PROMPT = user_inputs.BASE_SYSTEM_PROMPT
     if hasattr(user_inputs, "USER_CONTEXT"):
         USER_CONTEXT = user_inputs.USER_CONTEXT
-    # if hasattr(user_inputs, "ENABLED_CLIENTS"):
-    #     ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
-    #     print(
-    #         f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
-    #     )
-    # else:
-    #     ENABLED_CLIENTS = DEFAULT_CLIENTS
+    if hasattr(user_inputs, "ENABLED_TOOLKITS"):
+        ENABLED_TOOLKITS = user_inputs.ENABLED_TOOLKITS
+        print(
+            f"System will run with only the following toolkits:\n{ENABLED_TOOLKITS}\n\n"
+        )
+    else:
+        ENABLED_TOOLKITS = DEFAULT_TOOLKITS
 except ImportError:
     print("Unable to load values from user_inputs.py found, using default values")
-    # ENABLED_CLIENTS = DEFAULT_CLIENTS
+    ENABLED_TOOLKITS = DEFAULT_TOOLKITS
 
 def main():
     """
@@ -70,7 +68,7 @@ def main():
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
-        #enabled_clients=ENABLED_CLIENTS,
+        enabled_toolkits=ENABLED_TOOLKITS
     )
 
     print(f"INPUT_ACTION: {INPUT_ACTION}")
@@ -93,7 +91,7 @@ def step_executor():
     executor = StepExecutor(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
-        # enabled_clients=ENABLED_CLIENTS,
+        enabled_toolkits=ENABLED_TOOLKITS,
     )
 
     result = executor.process_input_with_agent_loop(

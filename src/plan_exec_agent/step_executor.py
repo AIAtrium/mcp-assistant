@@ -6,7 +6,7 @@ from anthropic import Anthropic
 from openai import OpenAI
 from arcadepy import Arcade
 from langfuse.decorators import observe, langfuse_context
-from .arcade_utils import get_tools_from_arcade, ModelProvider
+from .arcade_utils import get_toolkits_from_arcade, ModelProvider
 from .tool_processor import ToolProcessor
 from .llm_utils import LLMMessageCreator
 
@@ -18,10 +18,11 @@ class StepExecutor:
         self,
         default_system_prompt: str = None,
         user_context: str = None,
-        enabled_clients: List[str] = None,
+        enabled_toolkits: List[str] = None,
     ):
         self.arcade_client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
         self.tool_processor = ToolProcessor(arcade_client=self.arcade_client)
+        self.enabled_toolkits = enabled_toolkits
 
         # Initialize LLM clients
         anthropic_client = (
@@ -103,7 +104,7 @@ class StepExecutor:
     def get_all_tools(self, provider: ModelProvider):
         # Add a tool reference capability that allows the LLM to reference previous tool outputs
         reference_tool = self._get_reference_tool(provider)
-        arcade_tools = get_tools_from_arcade(self.arcade_client, provider)
+        arcade_tools = get_toolkits_from_arcade(self.arcade_client, provider, self.enabled_toolkits)
         return arcade_tools + [reference_tool]
 
     @observe()
@@ -129,8 +130,8 @@ class StepExecutor:
         tool_results_context = {}
         messages = [{"role": "user", "content": input_action}]
 
-        # TODO: alter this to account for only the available tools the user wants to authorize
-        available_tools = self.get_all_tools(provider)
+        # authorize only the enabled tools as part of the state of the agent
+        available_tools = state['tools'] if ('tools' in state and state['tools']) else self.get_all_tools(provider)
 
         response = self.message_creator.create_message(
             provider=provider,
@@ -222,7 +223,3 @@ class StepExecutor:
             state["tool_results"].update(tool_results_context)
 
         return "\n".join(final_text)
-
-
-
-

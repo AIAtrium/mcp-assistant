@@ -1,9 +1,12 @@
 from arcadepy import Arcade
 from enum import Enum
+from typing import List
+
 
 class ModelProvider(Enum):
     ANTHROPIC = 'anthropic'
     OPENAI = 'openai'
+
 
 AVAILABLE_TOOLS = {
     "tools":
@@ -46,9 +49,11 @@ AVAILABLE_TOOLS = {
         "github",
         "slack",
         "microsoft",
-        "notion"
+        "notion",
+        "google"
     ]
 }
+
 
 def get_tools_from_arcade(arcade_client: Arcade, provider: ModelProvider):
     tools = []
@@ -58,5 +63,21 @@ def get_tools_from_arcade(arcade_client: Arcade, provider: ModelProvider):
     for tool_list in AVAILABLE_TOOLS["tools"].values():
         for tool in tool_list:
             tools.append(arcade_client.tools.formatted.get(name=tool, format=provider.value))
+
+    return tools
+
+
+def get_toolkits_from_arcade(arcade_client: Arcade, provider: ModelProvider, enabled_toolkits: List[str] = None):
+    if not enabled_toolkits:
+        return get_tools_from_arcade(arcade_client, provider)
+    
+    tools = []
+    for toolkit in enabled_toolkits:
+        if toolkit in AVAILABLE_TOOLS["toolkits"] and toolkit != "notion":
+            tools.extend(arcade_client.tools.formatted.list(toolkit=toolkit, format=provider.value))
+
+        elif toolkit == "notion":
+            for tool in AVAILABLE_TOOLS["tools"]["Notion"]:
+                tools.append(arcade_client.tools.formatted.get(name=tool, format=provider.value))
 
     return tools

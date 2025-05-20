@@ -48,10 +48,10 @@ class PlanExecAgent:
         self,
         default_system_prompt: str = None,
         user_context: str = None,
-        enabled_clients: List[str] = None,
+        enabled_toolkits: List[str] = None,
     ):
         self.step_executor = StepExecutor(
-            default_system_prompt, user_context, enabled_clients
+            default_system_prompt, user_context, enabled_toolkits
         )
 
     @observe()
@@ -87,6 +87,8 @@ class PlanExecAgent:
 
         # Get available tools to inform the planning
         available_tools = self.step_executor.get_all_tools(state["provider"])
+        state["tools"] = available_tools
+        
         tool_descriptions = "\n".join(
             [f"- {name}: {description}" 
              for name, description in [self._get_tool_description(tool, state["provider"]) 
