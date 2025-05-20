@@ -48,10 +48,10 @@ class PlanExecAgent:
         self,
         default_system_prompt: str = None,
         user_context: str = None,
-        enabled_clients: List[str] = None,
+        enabled_toolkits: List[str] = None,
     ):
         self.step_executor = StepExecutor(
-            default_system_prompt, user_context, enabled_clients
+            default_system_prompt, user_context, enabled_toolkits
         )
 
     @observe()
@@ -87,6 +87,8 @@ class PlanExecAgent:
 
         # Get available tools to inform the planning
         available_tools = self.step_executor.get_all_tools(state["provider"])
+        state["tools"] = available_tools
+        
         tool_descriptions = "\n".join(
             [f"- {name}: {description}" 
              for name, description in [self._get_tool_description(tool, state["provider"]) 
@@ -104,7 +106,7 @@ class PlanExecAgent:
             messages,
             [planning_tools["plan_tool"]],
             plan_system_prompt,
-            state["langfuse_session_id"],
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
         )
 
         steps = self._extract_plan_from_response(response, state["provider"])
@@ -297,7 +299,7 @@ class PlanExecAgent:
             messages,
             replan_tools,
             replan_system_prompt,
-            state["langfuse_session_id"],
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
         )
 
         return self._process_replan_response(response, state)
@@ -517,7 +519,8 @@ class PlanExecAgent:
         input_action: str,
         provider: ModelProvider = ModelProvider.ANTHROPIC,
         max_iterations: int = 25,
-        user_id: str = "david_test"
+        user_id: str = "david_test",
+        langfuse_session_id: str = None
     ) -> str:
         """
         Execute a complete plan for the given query.
@@ -535,10 +538,12 @@ class PlanExecAgent:
         Returns:
             The final response to the user's query
         """
+        langfuse_session_id = langfuse_session_id or datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+        
         # Initialize state with values needed for the entire lifecycle
         state = {
             "input": input_action,
-            "langfuse_session_id": datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
+            "langfuse_session_id": langfuse_session_id,
             "past_steps": [],
             "current_plan": [],
             "tool_results": {},

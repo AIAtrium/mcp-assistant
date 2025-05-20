@@ -24,7 +24,7 @@ class ToolProcessor:
         final_text: List[str],
         user_id: str,
         provider: ModelProvider,
-        langfuse_session_id: str = None,
+        langfuse_data: Dict[str, Any] = None,
     ) -> Tuple[List[Dict[str, Any]], Any]:
         """
         Process a specific tool call and return updated messages and result content.
@@ -34,9 +34,9 @@ class ToolProcessor:
         """
 
         # Add langfuse tracking
-        if langfuse_session_id:
+        if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
             langfuse_context.update_current_observation(name=tool_name)
-            langfuse_context.update_current_trace(session_id=langfuse_session_id)
+            langfuse_context.update_current_trace(session_id=langfuse_data["session_id"], user_id=langfuse_data["user_id"])
             langfuse_context.flush()
 
         if tool_name == "reference_tool_output":
