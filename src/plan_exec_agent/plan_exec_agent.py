@@ -247,6 +247,8 @@ class PlanExecAgent:
 
         Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
 
+        If a critical step fails 3 times in a row, determine that the task is failed and use the submit_final_response tool to respond to the user.
+
         USER CONTEXT:
         {self.step_executor.user_context}
 
@@ -528,7 +530,7 @@ class PlanExecAgent:
         This method orchestrates the entire plan-execute-replan cycle:
         1. Creates an initial plan based on the query
         2. Executes steps one by one
-        3. Replans after each step
+        3. Replans after each step. If a critical step in the plan fails 3 times in a row, the task is marked as failed.
         4. Returns the final response when done
 
         Args:

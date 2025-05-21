@@ -16,6 +16,8 @@ OPENAI_API_KEY=
 ```
 You **only need ONE LLM key**. This repo only supports OpenAI and Anthropic models currently. 
 
+By default the agent will kick off an OAuth flow with Arcade for any tools that its not authorized to use. This will cause the exectuion to pause until that flow completes. If you want to skip any unauthorized tools without kicking off OAuth so that it doesn't block, set `SKIP_CLI_AUTH=true`.
+
 ### Observability and tracing
 This project uses [Langfuse](https://github.com/langfuse/langfuse) for observability and tracing. Its not mandatory but its helpful to see the dozens of LLM calls that occur nicely formatted in a UI. To utilize it, set these environment variables in the `.env`:
 
