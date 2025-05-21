@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Dict, List, Tuple, Any
 from langfuse.decorators import observe
 from langfuse.decorators import langfuse_context
@@ -127,9 +128,17 @@ class ToolProcessor:
             )
 
             if auth_response.status != "completed":
-                print(f"Authorization needed. URL: {auth_response.url}")
-                # Wait for the authorization to complete
-                self.arcade_client.auth.wait_for_completion(auth_response)
+                if not os.getenv("SKIP_CLI_AUTH"):
+                    print(f"Authorization needed. URL: {auth_response.url}")
+                    # Block and wait for the authorization to complete - only do this locally
+                    self.arcade_client.auth.wait_for_completion(auth_response)
+                else:
+                    print("Skipping authorization. Marking tool call as failed.")
+                    result_content = f"Unable to call {tool_name} because it requires authorization. Please authorize it manually outside of this program."
+
+                    return self._create_tool_response(
+                        tool_id, content, assistant_message_content, messages, result_content, provider
+                    )
 
             # Convert tool_args to dict if it's a string
             tool_input = tool_args if isinstance(tool_args, dict) else eval(tool_args)
