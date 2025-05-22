@@ -51,7 +51,8 @@ AVAILABLE_TOOLS = {
         "microsoft",
         "google",
         "NotionToolkit",
-        "Hubspot"
+        "Hubspot",
+        "Exa",
     ]
 }
 
