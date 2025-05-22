@@ -50,7 +50,8 @@ AVAILABLE_TOOLS = {
         "slack",
         "microsoft",
         "google",
-        "NotionToolkit"
+        "NotionToolkit",
+        "Hubspot"
     ]
 }
 
