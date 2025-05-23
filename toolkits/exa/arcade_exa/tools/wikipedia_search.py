@@ -1,14 +1,14 @@
-from typing import Annotated, Any, Dict
+from typing import Annotated
 import httpx
 from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
 @tool(requires_secrets=["EXA_API_KEY"])
-async def linkedin_search(
+async def wikipedia_search_exa(
     context: ToolContext,
     query: Annotated[
         str,
-        "Search query for LinkedIn (e.g., <url> company page OR <company name> company page)"
+        "Search query for Wikipedia"
     ],
     num_results: Annotated[
         int,
@@ -16,10 +16,10 @@ async def linkedin_search(
     ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
 ) -> Annotated[
     dict,
-    "A dictionary containing the Exa API search results for LinkedIn"
+    "A dictionary containing the Exa API search results for Wikipedia"
 ]:
     """
-    Search LinkedIn for companies using Exa AI. Simply include company URL, or company name, with 'company page' appended in your query.
+    Search Wikipedia using Exa AI - performs searches specifically within Wikipedia.org and returns relevant content from Wikipedia pages.
     """
     api_key = context.get_secret("EXA_API_KEY")
     if not api_key:
@@ -33,12 +33,13 @@ async def linkedin_search(
     payload = {
         "query": query,
         "type": "auto",
-        "includeDomains": ["linkedin.com"],
+        "includeDomains": ["wikipedia.org"],
         "numResults": num_results,
         "contents": {
             "text": {
                 "maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]
-            }
+            },
+            "livecrawl": "always"
         }
     }
     url = EXA_API_CONFIG["BASE_URL"] + EXA_API_CONFIG["ENDPOINTS"]["SEARCH"]
@@ -51,7 +52,7 @@ async def linkedin_search(
             return {
                 "content": [{
                     "type": "text",
-                    "text": "No LinkedIn results found. Please try a different query."
+                    "text": "No Wikipedia search results found. Please try a different query."
                 }]
             }
         return {

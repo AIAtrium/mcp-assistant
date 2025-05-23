@@ -1,25 +1,29 @@
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any, Dict, Optional
 import httpx
 from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
 @tool(requires_secrets=["EXA_API_KEY"])
-async def linkedin_search(
+async def competitor_finder(
     context: ToolContext,
     query: Annotated[
         str,
-        "Search query for LinkedIn (e.g., <url> company page OR <company name> company page)"
+        "Describe what the company/product in a few words (e.g., 'web search API', 'AI image generation', 'cloud storage service'). Keep it simple. Do not include the company name."
     ],
+    exclude_domain: Annotated[
+        Optional[str],
+        "Optional: The company's website to exclude from results (e.g., 'exa.ai')"
+    ] = None,
     num_results: Annotated[
         int,
-        "Number of search results to return (default: 5)"
-    ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
+        "Number of competitors to return (default: 10)"
+    ] = 10,
 ) -> Annotated[
     dict,
-    "A dictionary containing the Exa API search results for LinkedIn"
+    "A dictionary containing the Exa API search results for competitors"
 ]:
     """
-    Search LinkedIn for companies using Exa AI. Simply include company URL, or company name, with 'company page' appended in your query.
+    Find competitors of a company using Exa AI - performs targeted searches to identify businesses that offer similar products or services.
     """
     api_key = context.get_secret("EXA_API_KEY")
     if not api_key:
@@ -33,15 +37,18 @@ async def linkedin_search(
     payload = {
         "query": query,
         "type": "auto",
-        "includeDomains": ["linkedin.com"],
         "numResults": num_results,
         "contents": {
             "text": {
                 "maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]
-            }
+            },
+            "livecrawl": "always"
         }
     }
-    url = EXA_API_CONFIG["BASE_URL"] + EXA_API_CONFIG["ENDPOINTS"]["SEARCH"]
+    if exclude_domain:
+        payload["excludeDomains"] = [exclude_domain]
+
+    url = str(EXA_API_CONFIG["BASE_URL"]) + str(EXA_API_CONFIG["ENDPOINTS"]["SEARCH"])
 
     async with httpx.AsyncClient(timeout=25) as client:
         response = await client.post(url, headers=headers, json=payload)
@@ -51,7 +58,7 @@ async def linkedin_search(
             return {
                 "content": [{
                     "type": "text",
-                    "text": "No LinkedIn results found. Please try a different query."
+                    "text": "No competitors found. Please try a different query."
                 }]
             }
         return {

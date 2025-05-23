@@ -4,11 +4,11 @@ from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
 @tool(requires_secrets=["EXA_API_KEY"])
-async def linkedin_search(
+async def github_search(
     context: ToolContext,
     query: Annotated[
         str,
-        "Search query for LinkedIn (e.g., <url> company page OR <company name> company page)"
+        "Search query for GitHub repositories, or Github account, or code"
     ],
     num_results: Annotated[
         int,
@@ -16,14 +16,17 @@ async def linkedin_search(
     ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
 ) -> Annotated[
     dict,
-    "A dictionary containing the Exa API search results for LinkedIn"
+    "A dictionary containing the Exa API search results for GitHub"
 ]:
     """
-    Search LinkedIn for companies using Exa AI. Simply include company URL, or company name, with 'company page' appended in your query.
+    Search GitHub repositories using Exa AI - performs real-time searches on GitHub.com to find relevant repositories and GitHub accounts.
     """
     api_key = context.get_secret("EXA_API_KEY")
     if not api_key:
         raise RuntimeError("EXA_API_KEY is not set. Please provide a valid API key.")
+
+    # Prefix the query if it doesn't already mention GitHub
+    github_query = query if "github" in query.lower() else f"exa.ai GitHub: {query}"
 
     headers = {
         "accept": "application/json",
@@ -31,17 +34,16 @@ async def linkedin_search(
         "x-api-key": api_key,
     }
     payload = {
-        "query": query,
+        "query": github_query,
         "type": "auto",
-        "includeDomains": ["linkedin.com"],
+        "includeDomains": ["github.com"],
         "numResults": num_results,
         "contents": {
-            "text": {
-                "maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]
-            }
+            "text": True,
+            "livecrawl": "always"
         }
     }
-    url = EXA_API_CONFIG["BASE_URL"] + EXA_API_CONFIG["ENDPOINTS"]["SEARCH"]
+    url = str(EXA_API_CONFIG["BASE_URL"]) + str(EXA_API_CONFIG["ENDPOINTS"]["SEARCH"])
 
     async with httpx.AsyncClient(timeout=25) as client:
         response = await client.post(url, headers=headers, json=payload)
@@ -51,7 +53,7 @@ async def linkedin_search(
             return {
                 "content": [{
                     "type": "text",
-                    "text": "No LinkedIn results found. Please try a different query."
+                    "text": "No GitHub results found. Please try a different query."
                 }]
             }
         return {

@@ -1,25 +1,29 @@
-from typing import Annotated, Any, Dict
+from typing import Annotated
 import httpx
 from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
 @tool(requires_secrets=["EXA_API_KEY"])
-async def linkedin_search(
+async def research_paper_search(
     context: ToolContext,
     query: Annotated[
         str,
-        "Search query for LinkedIn (e.g., <url> company page OR <company name> company page)"
+        "Research topic or keyword to search for"
     ],
     num_results: Annotated[
         int,
-        "Number of search results to return (default: 5)"
+        "Number of research papers to return (default: 5)"
     ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
+    max_characters: Annotated[
+        int,
+        "Maximum number of characters to return for each result's text content (Default: 3000)"
+    ] = EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"],
 ) -> Annotated[
     dict,
-    "A dictionary containing the Exa API search results for LinkedIn"
+    "A dictionary containing the Exa API search results for research papers"
 ]:
     """
-    Search LinkedIn for companies using Exa AI. Simply include company URL, or company name, with 'company page' appended in your query.
+    Search across 100M+ research papers with full text access using Exa AI - performs targeted academic paper searches with deep research content coverage. Returns detailed information about relevant academic papers including titles, authors, publication dates, and full text excerpts.
     """
     api_key = context.get_secret("EXA_API_KEY")
     if not api_key:
@@ -32,13 +36,14 @@ async def linkedin_search(
     }
     payload = {
         "query": query,
+        "category": "research paper",
         "type": "auto",
-        "includeDomains": ["linkedin.com"],
         "numResults": num_results,
         "contents": {
             "text": {
-                "maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]
-            }
+                "maxCharacters": max_characters
+            },
+            "livecrawl": "fallback"
         }
     }
     url = EXA_API_CONFIG["BASE_URL"] + EXA_API_CONFIG["ENDPOINTS"]["SEARCH"]
@@ -51,7 +56,7 @@ async def linkedin_search(
             return {
                 "content": [{
                     "type": "text",
-                    "text": "No LinkedIn results found. Please try a different query."
+                    "text": "No research papers found. Please try a different query."
                 }]
             }
         return {
