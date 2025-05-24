@@ -10,6 +10,13 @@ from .arcade_utils import ModelProvider
 
 
 class State(TypedDict):
+    """
+    The state of the plan execution.
+
+    past_steps are contain the step executed and a summarized result of the step.
+    past_results are contain the step executed and the raw result of the step, with the exception of tool calls.
+    tool_results are contain the raw results of the tool calls, with the ID mapped to the tool call.
+    """
     input: str
     provider: ModelProvider
     inital_plan: List[str]
@@ -18,6 +25,7 @@ class State(TypedDict):
     response: str
     langfuse_session_id: str
     tool_results: Dict[str, Any]
+    past_results: Annotated[List[Tuple], operator.add]
 
 
 class Plan(BaseModel):
@@ -186,7 +194,6 @@ class PlanExecAgent:
         - Don't truncate or summarize too aggressively
         """
 
-        # TODO: not clear if we want to pass this context in
         # Create context for the execution, including past steps
         past_steps_context = ""
         if "past_steps" in state and state["past_steps"]:
@@ -209,7 +216,7 @@ class PlanExecAgent:
         if tool_results is None:
             state["tool_results"] = {}
 
-        result = self.step_executor.process_input_with_agent_loop(
+        result: List[str] = self.step_executor.process_input_with_agent_loop(
             execution_prompt,
             state["provider"],
             user_id=state["user_id"],
@@ -218,9 +225,10 @@ class PlanExecAgent:
             state=state,
         )
 
-        # Extract the most relevant part of the result
-        # NOTE: want want to remove if the performance is poor - too many tokens removed
-        processed_result = self.extract_final_result(result)
+        # append the `final_text` from the executor agent to the past_results
+        state["past_results"].append((step, result))
+
+        processed_result = self._summarize_step_result(state)
         return processed_result
 
     @observe()
@@ -494,7 +502,7 @@ class PlanExecAgent:
         else:
             raise ValueError(f"Unsupported provider: {state['provider']}")
 
-    def extract_final_result(self, text: str) -> str:
+    def _extract_final_result(self, text: str) -> str:
         """
         Extract the final RESULT section from the text if present, otherwise return the original text.
         This is to eliminate the repetition of intermediate results added to the `final_text` array
@@ -514,6 +522,51 @@ class PlanExecAgent:
             # but try to clean up a bit by removing tool call logs
             cleaned_text = re.sub(r"\[Calling tool.*?\]", "", text)
             return cleaned_text.strip()
+        
+    def _summarize_step_result(self, state: State) -> str:
+        """
+        Call the LLM to summarize this result into 1-2 information rich sentences
+        """
+        last_step, last_result = state["past_results"][-1]
+        
+        # NOTE: can add in the user context if needed
+        summarize_step_system_prompt = """
+        You are a planning agent. 
+        You are responsible for taking an input action from a user and breaking it down into a plan consisting of a series of actionable steps.
+        You are also responsible for determining the success or failure of each step and analyzing the results to help determine what the next step should be.
+        """
+        
+        # NOTE: can add in the user input if needed
+        summarize_step_prompt = f"""
+        You are given a step from a plan and the result of that step.
+        First determined in that step 'FAILED' or 'SUCCEEDED'.
+        Then summarize the result into 1-2 information rich sentences. Do not exceed 2 sentences.
+        Include as much detail as possible.
+        
+        If the step failed, include the reason it failed.
+        If the step succeeded, include the details of the success. 
+
+        ## Step:
+        {last_step}
+
+        ## Result:
+        {last_result}
+        
+        ## Summary:
+        """
+
+        messages = [{"role": "user", "content": summarize_step_prompt}]
+
+        response = self.step_executor.message_creator.create_message(
+            state["provider"],
+            messages,
+            None,
+            summarize_step_system_prompt,
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
+        )
+
+        step_summary = self.step_executor.message_creator._parse_response_to_text(response, state["provider"])
+        return step_summary
 
     @observe(as_type="trace")
     def execute_plan(
@@ -547,6 +600,7 @@ class PlanExecAgent:
             "input": input_action,
             "langfuse_session_id": langfuse_session_id,
             "past_steps": [],
+            "past_results": [],
             "current_plan": [],
             "tool_results": {},
             "initial_plan": [],

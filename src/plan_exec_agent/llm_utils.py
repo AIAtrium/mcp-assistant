@@ -94,7 +94,7 @@ class LLMMessageCreator:
             model="gpt-4.1",
             messages=all_messages,
             tools=available_tools,
-            tool_choice="auto",
+            tool_choice="auto" if available_tools else None,
         )
 
         if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
@@ -111,3 +111,46 @@ class LLMMessageCreator:
                 )
 
         return response
+
+    def _parse_response_to_text(self, response, provider: ModelProvider) -> str:
+        """
+        Extract text content from an LLM response based on the provider.
+        
+        Args:
+            response: The response from the LLM
+            provider: The model provider (Anthropic or OpenAI)
+            
+        Returns:
+            str: The extracted text or an error message if no text is found
+        """
+        try:
+            if provider == ModelProvider.ANTHROPIC:
+                # Check if response has content
+                if response and hasattr(response, 'content') and response.content:
+                    # Look for text content in the response
+                    for content in response.content:
+                        if hasattr(content, 'type') and content.type == 'text':
+                            return content.text
+                        elif isinstance(content, dict) and content.get('type') == 'text':
+                            return content.get('text', '')
+                
+                return "Error: No text content found in Anthropic response"
+                
+            elif provider == ModelProvider.OPENAI:
+                # Check if response has a message with content
+                if (response and 
+                    hasattr(response, 'choices') and 
+                    response.choices and 
+                    hasattr(response.choices[0], 'message')):
+                    
+                    message = response.choices[0].message
+                    if message.content:
+                        return message.content
+                
+                return "Error: No text content found in OpenAI response"
+                
+            else:
+                return f"Error: Unsupported provider {provider}"
+        
+        except Exception as e:
+            return f"Error parsing response to text: {str(e)}"

@@ -100,7 +100,6 @@ class StepExecutor:
         else:
             raise ValueError(f"Unsupported provider: {provider}")
     
-    # TODO: alter this to take into account enabled clients
     def get_all_tools(self, provider: ModelProvider):
         # Add a tool reference capability that allows the LLM to reference previous tool outputs
         reference_tool = self._get_reference_tool(provider)
@@ -131,8 +130,6 @@ class StepExecutor:
             current_step = state["current_plan"][0]
             langfuse_context.update_current_observation(name=f"{current_step}")
 
-        # Initialize conversation context
-        tool_results_context = {}
         messages = [{"role": "user", "content": input_action}]
 
         # authorize only the enabled tools as part of the state of the agent
@@ -190,7 +187,7 @@ class StepExecutor:
                         content,
                         assistant_message_content,
                         messages,
-                        tool_results_context,
+                        state,
                         final_text,
                         user_id,
                         provider,
@@ -200,7 +197,7 @@ class StepExecutor:
                     # Update conversation context
                     messages = updated_messages
                     if result_content:
-                        tool_results_context[tool_id] = result_content
+                        state["tool_results"][tool_id] = result_content
                     
                     # Get next response
                     response = self.message_creator.create_message(
@@ -214,17 +211,8 @@ class StepExecutor:
                     # Break the content loop to process the new response
                     break
 
-            # If there are no more tool calls, add the final text and break the loop
+            # the RESULT of the last item in final_text was added either above or in the tool_processor
             if not has_tool_calls:
-                if provider == ModelProvider.ANTHROPIC and len(response.content) > 0:
-                    if response.content[0].type == "text":
-                        final_text.append(response.content[0].text)
-                elif provider == ModelProvider.OPENAI and response.choices[0].message.content:
-                    final_text.append(response.choices[0].message.content)
                 break
 
-        # Add a line at the end, before returning the result
-        if state is not None and "tool_results" in state:
-            state["tool_results"].update(tool_results_context)
-
-        return "\n".join(final_text)
+        return final_text

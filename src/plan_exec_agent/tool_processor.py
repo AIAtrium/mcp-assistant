@@ -21,7 +21,7 @@ class ToolProcessor:
         content: Any,
         assistant_message_content: List[Any],
         messages: List[Dict[str, Any]],
-        tool_results_context: Dict[str, Any],
+        state: Dict[str, Any],
         final_text: List[str],
         user_id: str,
         provider: ModelProvider,
@@ -47,7 +47,7 @@ class ToolProcessor:
                 content,
                 assistant_message_content,
                 messages,
-                tool_results_context,
+                state,
             )
         else:
             return self._handle_standard_tool(
@@ -69,17 +69,14 @@ class ToolProcessor:
         content: Any,
         assistant_message_content: List[Any],
         messages: List[Dict[str, Any]],
-        tool_results_context: Dict[str, Any],
+        state: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], Any]:
         """Handle reference_tool_output tool."""
         referenced_tool_id = tool_args["tool_id"]
-        extract_path = tool_args.get("extract_path", None)
         result_content = None
 
-        if referenced_tool_id in tool_results_context:
-            result_content = self._extract_reference_data(
-                tool_results_context[referenced_tool_id], extract_path
-            )
+        if state and "tool_results" in state and referenced_tool_id in state["tool_results"]:
+            result_content = state["tool_results"][referenced_tool_id]
         else:
             result_content = (
                 f"Error: No tool result found with ID '{referenced_tool_id}'"
@@ -88,24 +85,6 @@ class ToolProcessor:
         return self._create_tool_response(
             tool_id, content, assistant_message_content, messages, result_content, ModelProvider.ANTHROPIC
         )
-
-    def _extract_reference_data(self, result_content: Any, extract_path: str) -> str:
-        """Extract data from a result using the given path."""
-        if not extract_path or not result_content:
-            return result_content
-
-        try:
-            data = json.loads(result_content)
-            parts = extract_path.split(".")
-            for part in parts:
-                if part in data:
-                    data = data[part]
-                else:
-                    data = None
-                    break
-            return json.dumps(data) if data else "Path not found in data"
-        except json.JSONDecodeError:
-            return "Cannot extract path: result is not valid JSON"
 
     def _handle_standard_tool(
         self,
@@ -151,7 +130,7 @@ class ToolProcessor:
                 user_id=user_id,
             )
 
-            final_text.append(f"[Executing tool {tool_name} with args {tool_input}]")
+            final_text.append(f"[Executing tool {tool_name} with args {tool_input} with id {tool_id}]")
 
             # Handle the response
             if response.success:
