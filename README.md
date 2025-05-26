@@ -50,6 +50,33 @@ Create a file called `user_inputs.py` in root directory then add the following c
 
 Then run `python main.py` to see the result
 
+### Linking the Results to Other Systems using a Queue
+This project supports publishing the `state` during the agent's main execution loop using Redis.
+
+
+**To run Redis locally, use:**
+```
+docker run -d --name redis-local -p 6379:6379 redis:latest
+```
+
+Please add the following environment variables to your .env file
+```
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_STREAM_NAME=plan_execution
+PUBLISH_TO_REDIS=true
+```
+
+If you need to debug redis, use the following REDIS CLI commands:
+First run this to start a terminal in the container `docker exec -it redis-local redis-cli`
+Then
+```
+KEYS * # check streams
+XLEN plan_execution # check this specific stream
+XREVRANGE plan_execution + - COUNT 1  # check the last message
+```
+
 ## Future Work
 
 - More connectors

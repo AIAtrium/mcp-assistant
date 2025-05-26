@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from langfuse.decorators import observe
 from .step_executor import StepExecutor
 from .arcade_utils import ModelProvider
+from .redis_publisher import RedisPublisher
 
 
 class State(TypedDict):
@@ -28,7 +29,8 @@ class State(TypedDict):
     langfuse_session_id: str
     tool_results: Dict[str, Any]
     past_results: Annotated[List[Tuple], operator.add]
-
+    user_id: str
+    task_id: str
 
 class Plan(BaseModel):
     """Plan to follow in future"""
@@ -63,6 +65,7 @@ class PlanExecAgent:
         self.step_executor = StepExecutor(
             default_system_prompt, user_context, enabled_toolkits
         )
+        self.redis_publisher = RedisPublisher()
 
     @observe()
     def initial_plan(self, state: State) -> Plan:
@@ -625,7 +628,8 @@ class PlanExecAgent:
         provider: ModelProvider = ModelProvider.ANTHROPIC,
         max_iterations: int = 25,
         user_id: str = "david_test",
-        langfuse_session_id: str = None
+        langfuse_session_id: str = None,
+        task_id: str = None
     ) -> str:
         """
         Execute a complete plan for the given query.
@@ -657,6 +661,7 @@ class PlanExecAgent:
             "response": "",
             "provider": provider,
             "user_id": user_id,
+            "task_id": task_id
         }
 
         # Step 1: Generate the initial plan
@@ -665,6 +670,10 @@ class PlanExecAgent:
         state["initial_plan"] = plan.steps
         state["current_plan"] = plan.steps.copy()
         print(f"Initial plan generated with {len(plan.steps)} steps")
+
+        # Publish initial plan to Redis if enabled\
+        if self.redis_publisher.is_enabled():
+            self.redis_publisher.publish_event("initial_plan", state)
 
         # Step 2-4: Execute steps, replan, and repeat
         iteration = 0
@@ -761,6 +770,10 @@ class PlanExecAgent:
                 user_id=state["user_id"],
                 langfuse_session_id=state["langfuse_session_id"],
             )
+
+        # Publish final result to Redis if enabled
+        if self.redis_publisher.is_enabled():
+            self.redis_publisher.publish_event("final_result", state)
 
         # Return the final response
         return state["response"]
