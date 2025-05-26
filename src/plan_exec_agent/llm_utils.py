@@ -45,17 +45,23 @@ class LLMMessageCreator:
         # Add langfuse input tracking
         langfuse_context.update_current_observation(
             input=messages,
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             session_id=langfuse_data["session_id"] if langfuse_data and "session_id" in langfuse_data else None
         )
 
-        response: Message = self.anthropic.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=4096,
-            system=system_prompt,
-            messages=messages,
-            tools=available_tools,
-        )
+        # Prepare the API call parameters
+        api_params = {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        
+        # Only add tools if they are provided and not None/empty
+        if available_tools:
+            api_params["tools"] = available_tools
+
+        response: Message = self.anthropic.messages.create(**api_params)
 
         # if no session id is provided, doesn't flush to langfuse
         if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
