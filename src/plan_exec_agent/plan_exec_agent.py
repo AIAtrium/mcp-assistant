@@ -183,7 +183,7 @@ class PlanExecAgent:
         You have access to tools to help you accomplish this task. You can use these tools to complete the step.
         You have access to the results of previous tool calls performed earlier in the plan. You can use this information to complete the step.
         You also have access to the results of previous steps. You can use this information to complete the step.
-        Focus only on completing this specific step - do not attempt to execute other steps in the plan.
+        Focus only on completing *this specific step* - do not attempt to execute other steps in the plan.
         
         IMPORTANT: If you retrieve data that will be needed by future steps (like email IDs, calendar events, etc.):
         1. Process the data completely in this step if that's what the step requires
@@ -205,19 +205,28 @@ class PlanExecAgent:
                     f"{i + 1}. Step: {past_step}\n   Result: {result}\n\n"
                 )
 
+        tool_results = state.get("tool_results")
+        if tool_results is None:
+            state["tool_results"] = {}
+
+        tool_context = ""
+        if "tool_results" in state and state["tool_results"]:
+            tool_context = "## Data available from tool calls in previous steps:\n"
+            for key, (tool_name, value) in state["tool_results"].items():
+                if isinstance(value, list):
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): {len(value)} items\n"
+                else:
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): Data available\n"
+        
         objective_context = f"## Your objective:\n{state['input']}\n\n"
         plan_context = (
             f"## Overall plan:\n"
             + "\n".join([f"{i + 1}. {s}" for i, s in enumerate(state["current_plan"])])
             + "\n\n"
         )
-
-        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
-
-        tool_results = state.get("tool_results")
-        if tool_results is None:
-            state["tool_results"] = {}
-
+        
+        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
+        
         result: List[str] = self.step_executor.process_input_with_agent_loop(
             execution_prompt,
             state["provider"],
@@ -544,6 +553,9 @@ class PlanExecAgent:
         First determined in that step 'FAILED' or 'SUCCEEDED'.
         Then summarize the result into 1-2 information rich sentences. Do not exceed 2 sentences.
         Include as much detail as possible.
+        Make sure to include the following if applicable:
+        - if tools were called, state they were called, and how many times, i.e. 'XYZ tool was called 3 times' 
+        - if anything like a summary written or analysis was performed that is the result of that step
         
         If the step failed, include the reason it failed.
         If the step succeeded, include the details of the success. 

@@ -88,7 +88,8 @@ class ToolProcessor:
         result_content = None
 
         if state and "tool_results" in state and referenced_tool_id in state["tool_results"]:
-            result_content = state["tool_results"][referenced_tool_id]
+            tool_name, result_content = state["tool_results"][referenced_tool_id]
+            print(f"Successfully retrieved tool result for {tool_name} with ID {referenced_tool_id} with LLM tool call {tool_id}")
         else:
             result_content = (
                 f"Error: No tool result found with ID '{referenced_tool_id}'"
