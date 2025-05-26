@@ -58,17 +58,13 @@ class StepExecutor:
         if provider == ModelProvider.ANTHROPIC:
             return {
                 "name": "reference_tool_output",
-                "description": "Reference the output of a previously called tool",
+                "description": "Reference the output of a previously called tool from any of the prior steps.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "tool_id": {
                             "type": "string",
-                            "description": "The ID of the previously called tool",
-                        },
-                        "extract_path": {
-                            "type": "string",
-                            "description": "Optional JSON path to extract specific data from the tool result",
+                            "description": "The ID of the previously called tool. This is NOT the name of the tool, it is the ID of the tool call. ",
                         },
                     },
                     "required": ["tool_id"],
@@ -79,17 +75,13 @@ class StepExecutor:
                 "type": "function",
                 "function": {
                     "name": "reference_tool_output",
-                    "description": "Reference the output of a previously called tool",
+                    "description": "Reference the output of a previously called tool from any of the prior steps.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "tool_id": {
                                 "type": "string",
-                                "description": "The ID of the previously called tool",
-                            },
-                            "extract_path": {
-                                "type": "string",
-                                "description": "Optional JSON path to extract specific data from the tool result",
+                                "description": "The ID of the previously called tool. This is NOT the name of the tool, it is the ID of the tool call. ",
                             },
                         },
                         "required": ["tool_id"],
@@ -100,11 +92,52 @@ class StepExecutor:
         else:
             raise ValueError(f"Unsupported provider: {provider}")
     
+    def _get_previous_step_tool(self, provider: ModelProvider):
+        """Tool to access results from previous steps in the plan."""
+        if provider == ModelProvider.ANTHROPIC:
+            return {
+                "name": "get_previous_step_result",
+                "description": "Get the result from a previous step in the plan. Use this when you need to reference what was accomplished in an earlier step. This is the output from the execution agent, not from a tool call.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "step_number": {
+                            "type": "integer",
+                            "description": "The step number (1-based) to get the result from. For example, use 1 for the first step, 2 for the second step, etc.",
+                            "minimum": 1
+                        },
+                    },
+                    "required": ["step_number"],
+                },
+            }
+        elif provider == ModelProvider.OPENAI:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "get_previous_step_result",
+                    "description": "Get the result from a previous step in the plan. Use this when you need to reference what was accomplished in an earlier step. This is the output from the execution agent, not from a tool call.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "step_number": {
+                                "type": "integer",
+                                "description": "The step number (1-based) to get the result from. For example, use 1 for the first step, 2 for the second step, etc.",
+                                "minimum": 1
+                            },
+                        },
+                        "required": ["step_number"],
+                    },
+                }
+            }
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
     def get_all_tools(self, provider: ModelProvider):
-        # Add a tool reference capability that allows the LLM to reference previous tool outputs
+        # Add tools for referencing previous results
         reference_tool = self._get_reference_tool(provider)
+        previous_step_tool = self._get_previous_step_tool(provider)
         arcade_tools = get_toolkits_from_arcade(self.arcade_client, provider, self.enabled_toolkits)
-        return arcade_tools + [reference_tool]
+        return arcade_tools + [reference_tool, previous_step_tool]
 
     @observe()
     def process_input_with_agent_loop(
@@ -196,8 +229,8 @@ class StepExecutor:
 
                     # Update conversation context
                     messages = updated_messages
-                    if result_content:
-                        state["tool_results"][tool_id] = result_content
+                    if result_content and tool_name != "get_previous_step_result" and tool_name != "reference_tool_output":
+                        state["tool_results"][tool_id] = (tool_name, result_content)
                     
                     # Get next response
                     response = self.message_creator.create_message(

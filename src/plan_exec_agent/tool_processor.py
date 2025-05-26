@@ -48,6 +48,17 @@ class ToolProcessor:
                 assistant_message_content,
                 messages,
                 state,
+                provider,
+            )
+        elif tool_name == "get_previous_step_result":
+            return self._handle_previous_step_tool(
+                tool_id,
+                tool_args,
+                content,
+                assistant_message_content,
+                messages,
+                state,
+                provider,
             )
         else:
             return self._handle_standard_tool(
@@ -70,6 +81,7 @@ class ToolProcessor:
         assistant_message_content: List[Any],
         messages: List[Dict[str, Any]],
         state: Dict[str, Any],
+        provider: ModelProvider,
     ) -> Tuple[List[Dict[str, Any]], Any]:
         """Handle reference_tool_output tool."""
         referenced_tool_id = tool_args["tool_id"]
@@ -83,7 +95,56 @@ class ToolProcessor:
             )
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content, ModelProvider.ANTHROPIC
+            tool_id, content, assistant_message_content, messages, result_content, provider
+        )
+
+    def _handle_previous_step_tool(
+        self,
+        tool_id: str,
+        tool_args: Dict[str, Any],
+        content: Any,
+        assistant_message_content: List[Any],
+        messages: List[Dict[str, Any]],
+        state: Dict[str, Any],
+        provider: ModelProvider,
+    ) -> Tuple[List[Dict[str, Any]], Any]:
+        """
+        This enables the execution agent to reference the output of a previous step.
+        The result of that previous step is added to the `updated_messages` array 
+        in the `_create_tool_response` function. 
+        These messages are fed back into the LLM during the next iteration of the execution loop,
+        allowing it to take action on them.
+
+        NOTE: if these results are large and this tool is called many times in one execution loop,
+        it could cause the LLM to run out of context window.
+        """
+        step_number = tool_args.get("step_number")
+        
+        if not step_number or step_number < 1:
+            result_content = "Error: Invalid step number. Please provide a step number >= 1."
+            return self._create_tool_response(
+                tool_id, content, assistant_message_content, messages, result_content, provider
+            )
+        
+        # Convert to 0-based index
+        step_index = step_number - 1
+        
+        try:
+            if (state and "past_results" in state and 
+                step_index < len(state["past_results"])):
+                step_name, raw_result = state["past_results"][step_index]
+                # Convert list to string if needed
+                if isinstance(raw_result, list):
+                    raw_result = "\n".join(str(item) for item in raw_result)
+                result_content = f"Step {step_number} ({step_name}):\n{raw_result}"
+            else:
+                result_content = f"Error: No raw result found for step {step_number}. Available steps: 1-{len(state.get('past_results', []))}"
+            
+        except Exception as e:
+            result_content = f"Error retrieving step {step_number} result: {str(e)}"
+        
+        return self._create_tool_response(
+            tool_id, content, assistant_message_content, messages, result_content, provider
         )
 
     def _handle_standard_tool(

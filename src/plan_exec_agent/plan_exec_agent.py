@@ -180,7 +180,9 @@ class PlanExecAgent:
         You are an execution agent tasked with carrying out a specific step in a plan.
         Your current task is to execute the following step: "{step}"
         
-        You have access to tools to help you accomplish this task. Use these tools to complete the step.
+        You have access to tools to help you accomplish this task. You can use these tools to complete the step.
+        You have access to the results of previous tool calls performed earlier in the plan. You can use this information to complete the step.
+        You also have access to the results of previous steps. You can use this information to complete the step.
         Focus only on completing this specific step - do not attempt to execute other steps in the plan.
         
         IMPORTANT: If you retrieve data that will be needed by future steps (like email IDs, calendar events, etc.):
@@ -277,12 +279,12 @@ class PlanExecAgent:
 
         tool_context = ""
         if "tool_results" in state and state["tool_results"]:
-            tool_context = "## Data available from previous steps:\n"
-            for key, value in state["tool_results"].items():
+            tool_context = "## Data available from tool calls in previous steps:\n"
+            for key, (tool_name, value) in state["tool_results"].items():
                 if isinstance(value, list):
-                    tool_context += f"- {key}: {len(value)} items\n"
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): {len(value)} items\n"
                 else:
-                    tool_context += f"- {key}: Data available\n"
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): Data available\n"
 
         # NOTE: the context window could get very large here
         replan_prompt = f"""
