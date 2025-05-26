@@ -16,6 +16,8 @@ class State(TypedDict):
     past_steps are contain the step executed and a summarized result of the step.
     past_results are contain the step executed and the raw result of the step, with the exception of tool calls.
     tool_results are contain the raw results of the tool calls, with the ID mapped to the tool call.
+
+    NOTE: we may have to consolidate tool_results and past_results into a single dict so that the model doesn't get confused
     """
     input: str
     provider: ModelProvider
@@ -261,7 +263,10 @@ class PlanExecAgent:
         2. Some steps should be removed or added
         3. The objective has been achieved
         
-        If the objective has been achieved, use the submit_final_response tool.
+        CRITICAL: You can ONLY mark the task as complete (use submit_final_response) if the LAST STEP of the current plan was performed correctly and successfully. 
+        If the last step of the plan has not been completed yet, you MUST continue with an updated plan.
+
+        If the objective has been achieved AND the last step of the plan was completed successfully, use the submit_final_response tool.
         Otherwise, use the submit_plan tool with an updated plan of remaining steps.
 
         Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
@@ -295,6 +300,34 @@ class PlanExecAgent:
                 else:
                     tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): Data available\n"
 
+        """
+        Add explicit tracking of last step vs last completed step. 
+        This to prevent the model from marking the task as complete if the last step of the plan has not been completed yet.
+        """
+        step_tracking_context = ""
+        if state["current_plan"]:
+            last_planned_step = state["current_plan"][-1]
+            step_tracking_context += f"## CRITICAL STEP TRACKING:\n"
+            step_tracking_context += f"- The LAST STEP of the current plan is: \"{last_planned_step}\"\n"
+            
+            if state["past_steps"]:
+                last_completed_step, last_completed_result = state["past_steps"][-1]
+                step_tracking_context += f"- The LAST COMPLETED STEP was: \"{last_completed_step}\"\n"
+                step_tracking_context += f"- The result of the last completed step was: {last_completed_result}\n"
+                
+                # Check if the last completed step matches the last planned step
+                if last_completed_step.strip() == last_planned_step.strip():
+                    step_tracking_context += f"- ✅ The last step of the plan WAS completed successfully\n"
+                    step_tracking_context += f"- You can now mark the task as complete if the objective has been achieved\n"
+                else:
+                    step_tracking_context += f"- ❌ The last step of the plan has NOT been completed yet\n"
+                    step_tracking_context += f"- You MUST continue with the plan - do NOT mark as complete\n"
+            else:
+                step_tracking_context += f"- No steps have been completed yet\n"
+                step_tracking_context += f"- You MUST continue with the plan - do NOT mark as complete\n"
+            
+            step_tracking_context += "\n"
+
         # NOTE: the context window could get very large here
         replan_prompt = f"""
         ## Objective:
@@ -302,11 +335,14 @@ class PlanExecAgent:
         
         {current_plan_context}
         {past_steps_context}
+        {step_tracking_context}
         {tool_context}
         
         Based on the progress so far, decide whether to:
         1. Continue with an updated plan (use submit_plan tool if there are still steps needed)
-        2. Provide a final response (use submit_final_response tool if the objective has been achieved)
+        2. Provide a final response (use submit_final_response tool ONLY if the objective has been achieved AND the last step of the plan was completed successfully)
+        
+        REMEMBER: You can only mark the task as complete if the last step of the current plan was performed correctly.
         """
 
         # Get shared planning tools
