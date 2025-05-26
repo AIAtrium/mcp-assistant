@@ -21,7 +21,7 @@ class ToolProcessor:
         content: Any,
         assistant_message_content: List[Any],
         messages: List[Dict[str, Any]],
-        tool_results_context: Dict[str, Any],
+        state: Dict[str, Any],
         final_text: List[str],
         user_id: str,
         provider: ModelProvider,
@@ -47,7 +47,18 @@ class ToolProcessor:
                 content,
                 assistant_message_content,
                 messages,
-                tool_results_context,
+                state,
+                provider,
+            )
+        elif tool_name == "get_previous_step_result":
+            return self._handle_previous_step_tool(
+                tool_id,
+                tool_args,
+                content,
+                assistant_message_content,
+                messages,
+                state,
+                provider,
             )
         else:
             return self._handle_standard_tool(
@@ -69,43 +80,73 @@ class ToolProcessor:
         content: Any,
         assistant_message_content: List[Any],
         messages: List[Dict[str, Any]],
-        tool_results_context: Dict[str, Any],
+        state: Dict[str, Any],
+        provider: ModelProvider,
     ) -> Tuple[List[Dict[str, Any]], Any]:
         """Handle reference_tool_output tool."""
         referenced_tool_id = tool_args["tool_id"]
-        extract_path = tool_args.get("extract_path", None)
         result_content = None
 
-        if referenced_tool_id in tool_results_context:
-            result_content = self._extract_reference_data(
-                tool_results_context[referenced_tool_id], extract_path
-            )
+        if state and "tool_results" in state and referenced_tool_id in state["tool_results"]:
+            tool_name, result_content = state["tool_results"][referenced_tool_id]
+            print(f"Successfully retrieved tool result for {tool_name} with ID {referenced_tool_id} with LLM tool call {tool_id}")
         else:
             result_content = (
                 f"Error: No tool result found with ID '{referenced_tool_id}'"
             )
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content, ModelProvider.ANTHROPIC
+            tool_id, content, assistant_message_content, messages, result_content, provider
         )
 
-    def _extract_reference_data(self, result_content: Any, extract_path: str) -> str:
-        """Extract data from a result using the given path."""
-        if not extract_path or not result_content:
-            return result_content
+    def _handle_previous_step_tool(
+        self,
+        tool_id: str,
+        tool_args: Dict[str, Any],
+        content: Any,
+        assistant_message_content: List[Any],
+        messages: List[Dict[str, Any]],
+        state: Dict[str, Any],
+        provider: ModelProvider,
+    ) -> Tuple[List[Dict[str, Any]], Any]:
+        """
+        This enables the execution agent to reference the output of a previous step.
+        The result of that previous step is added to the `updated_messages` array 
+        in the `_create_tool_response` function. 
+        These messages are fed back into the LLM during the next iteration of the execution loop,
+        allowing it to take action on them.
 
+        NOTE: if these results are large and this tool is called many times in one execution loop,
+        it could cause the LLM to run out of context window.
+        """
+        step_number = tool_args.get("step_number")
+        
+        if not step_number or step_number < 1:
+            result_content = "Error: Invalid step number. Please provide a step number >= 1."
+            return self._create_tool_response(
+                tool_id, content, assistant_message_content, messages, result_content, provider
+            )
+        
+        # Convert to 0-based index
+        step_index = step_number - 1
+        
         try:
-            data = json.loads(result_content)
-            parts = extract_path.split(".")
-            for part in parts:
-                if part in data:
-                    data = data[part]
-                else:
-                    data = None
-                    break
-            return json.dumps(data) if data else "Path not found in data"
-        except json.JSONDecodeError:
-            return "Cannot extract path: result is not valid JSON"
+            if (state and "past_results" in state and 
+                step_index < len(state["past_results"])):
+                step_name, raw_result = state["past_results"][step_index]
+                # Convert list to string if needed
+                if isinstance(raw_result, list):
+                    raw_result = "\n".join(str(item) for item in raw_result)
+                result_content = f"Step {step_number} ({step_name}):\n{raw_result}"
+            else:
+                result_content = f"Error: No raw result found for step {step_number}. Available steps: 1-{len(state.get('past_results', []))}"
+            
+        except Exception as e:
+            result_content = f"Error retrieving step {step_number} result: {str(e)}"
+        
+        return self._create_tool_response(
+            tool_id, content, assistant_message_content, messages, result_content, provider
+        )
 
     def _handle_standard_tool(
         self,
@@ -151,7 +192,7 @@ class ToolProcessor:
                 user_id=user_id,
             )
 
-            final_text.append(f"[Executing tool {tool_name} with args {tool_input}]")
+            final_text.append(f"[Executing tool {tool_name} with args {tool_input} with id {tool_id}]")
 
             # Handle the response
             if response.success:

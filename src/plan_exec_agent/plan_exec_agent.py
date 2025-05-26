@@ -10,6 +10,15 @@ from .arcade_utils import ModelProvider
 
 
 class State(TypedDict):
+    """
+    The state of the plan execution.
+
+    past_steps are contain the step executed and a summarized result of the step.
+    past_results are contain the step executed and the raw result of the step, with the exception of tool calls.
+    tool_results are contain the raw results of the tool calls, with the ID mapped to the tool call.
+
+    NOTE: we may have to consolidate tool_results and past_results into a single dict so that the model doesn't get confused
+    """
     input: str
     provider: ModelProvider
     inital_plan: List[str]
@@ -18,6 +27,7 @@ class State(TypedDict):
     response: str
     langfuse_session_id: str
     tool_results: Dict[str, Any]
+    past_results: Annotated[List[Tuple], operator.add]
 
 
 class Plan(BaseModel):
@@ -172,8 +182,10 @@ class PlanExecAgent:
         You are an execution agent tasked with carrying out a specific step in a plan.
         Your current task is to execute the following step: "{step}"
         
-        You have access to tools to help you accomplish this task. Use these tools to complete the step.
-        Focus only on completing this specific step - do not attempt to execute other steps in the plan.
+        You have access to tools to help you accomplish this task. You can use these tools to complete the step.
+        You have access to the results of previous tool calls performed earlier in the plan. You can use this information to complete the step.
+        You also have access to the results of previous steps. You can use this information to complete the step.
+        Focus only on completing *this specific step* - do not attempt to execute other steps in the plan.
         
         IMPORTANT: If you retrieve data that will be needed by future steps (like email IDs, calendar events, etc.):
         1. Process the data completely in this step if that's what the step requires
@@ -186,7 +198,6 @@ class PlanExecAgent:
         - Don't truncate or summarize too aggressively
         """
 
-        # TODO: not clear if we want to pass this context in
         # Create context for the execution, including past steps
         past_steps_context = ""
         if "past_steps" in state and state["past_steps"]:
@@ -196,20 +207,29 @@ class PlanExecAgent:
                     f"{i + 1}. Step: {past_step}\n   Result: {result}\n\n"
                 )
 
+        tool_results = state.get("tool_results")
+        if tool_results is None:
+            state["tool_results"] = {}
+
+        tool_context = ""
+        if "tool_results" in state and state["tool_results"]:
+            tool_context = "## Data available from tool calls in previous steps:\n"
+            for key, (tool_name, value) in state["tool_results"].items():
+                if isinstance(value, list):
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): {len(value)} items\n"
+                else:
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): Data available\n"
+        
         objective_context = f"## Your objective:\n{state['input']}\n\n"
         plan_context = (
             f"## Overall plan:\n"
             + "\n".join([f"{i + 1}. {s}" for i, s in enumerate(state["current_plan"])])
             + "\n\n"
         )
-
-        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
-
-        tool_results = state.get("tool_results")
-        if tool_results is None:
-            state["tool_results"] = {}
-
-        result = self.step_executor.process_input_with_agent_loop(
+        
+        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
+        
+        result: List[str] = self.step_executor.process_input_with_agent_loop(
             execution_prompt,
             state["provider"],
             user_id=state["user_id"],
@@ -218,9 +238,10 @@ class PlanExecAgent:
             state=state,
         )
 
-        # Extract the most relevant part of the result
-        # NOTE: want want to remove if the performance is poor - too many tokens removed
-        processed_result = self.extract_final_result(result)
+        # append the `final_text` from the executor agent to the past_results
+        state["past_results"].append((step, result))
+
+        processed_result = self._summarize_step_result(state)
         return processed_result
 
     @observe()
@@ -242,7 +263,10 @@ class PlanExecAgent:
         2. Some steps should be removed or added
         3. The objective has been achieved
         
-        If the objective has been achieved, use the submit_final_response tool.
+        CRITICAL: You can ONLY mark the task as complete (use submit_final_response) if the LAST STEP of the current plan was performed correctly and successfully. 
+        If the last step of the plan has not been completed yet, you MUST continue with an updated plan.
+
+        If the objective has been achieved AND the last step of the plan was completed successfully, use the submit_final_response tool.
         Otherwise, use the submit_plan tool with an updated plan of remaining steps.
 
         Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
@@ -269,12 +293,40 @@ class PlanExecAgent:
 
         tool_context = ""
         if "tool_results" in state and state["tool_results"]:
-            tool_context = "## Data available from previous steps:\n"
-            for key, value in state["tool_results"].items():
+            tool_context = "## Data available from tool calls in previous steps:\n"
+            for key, (tool_name, value) in state["tool_results"].items():
                 if isinstance(value, list):
-                    tool_context += f"- {key}: {len(value)} items\n"
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): {len(value)} items\n"
                 else:
-                    tool_context += f"- {key}: Data available\n"
+                    tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): Data available\n"
+
+        """
+        Add explicit tracking of last step vs last completed step. 
+        This to prevent the model from marking the task as complete if the last step of the plan has not been completed yet.
+        """
+        step_tracking_context = ""
+        if state["current_plan"]:
+            last_planned_step = state["current_plan"][-1]
+            step_tracking_context += f"## CRITICAL STEP TRACKING:\n"
+            step_tracking_context += f"- The LAST STEP of the current plan is: \"{last_planned_step}\"\n"
+            
+            if state["past_steps"]:
+                last_completed_step, last_completed_result = state["past_steps"][-1]
+                step_tracking_context += f"- The LAST COMPLETED STEP was: \"{last_completed_step}\"\n"
+                step_tracking_context += f"- The result of the last completed step was: {last_completed_result}\n"
+                
+                # Check if the last completed step matches the last planned step
+                if last_completed_step.strip() == last_planned_step.strip():
+                    step_tracking_context += f"- ✅ The last step of the plan WAS completed successfully\n"
+                    step_tracking_context += f"- You can now mark the task as complete if the objective has been achieved\n"
+                else:
+                    step_tracking_context += f"- ❌ The last step of the plan has NOT been completed yet\n"
+                    step_tracking_context += f"- You MUST continue with the plan - do NOT mark as complete\n"
+            else:
+                step_tracking_context += f"- No steps have been completed yet\n"
+                step_tracking_context += f"- You MUST continue with the plan - do NOT mark as complete\n"
+            
+            step_tracking_context += "\n"
 
         # NOTE: the context window could get very large here
         replan_prompt = f"""
@@ -283,11 +335,14 @@ class PlanExecAgent:
         
         {current_plan_context}
         {past_steps_context}
+        {step_tracking_context}
         {tool_context}
         
         Based on the progress so far, decide whether to:
         1. Continue with an updated plan (use submit_plan tool if there are still steps needed)
-        2. Provide a final response (use submit_final_response tool if the objective has been achieved)
+        2. Provide a final response (use submit_final_response tool ONLY if the objective has been achieved AND the last step of the plan was completed successfully)
+        
+        REMEMBER: You can only mark the task as complete if the last step of the current plan was performed correctly.
         """
 
         # Get shared planning tools
@@ -494,7 +549,7 @@ class PlanExecAgent:
         else:
             raise ValueError(f"Unsupported provider: {state['provider']}")
 
-    def extract_final_result(self, text: str) -> str:
+    def _extract_final_result(self, text: str) -> str:
         """
         Extract the final RESULT section from the text if present, otherwise return the original text.
         This is to eliminate the repetition of intermediate results added to the `final_text` array
@@ -514,6 +569,54 @@ class PlanExecAgent:
             # but try to clean up a bit by removing tool call logs
             cleaned_text = re.sub(r"\[Calling tool.*?\]", "", text)
             return cleaned_text.strip()
+        
+    def _summarize_step_result(self, state: State) -> str:
+        """
+        Call the LLM to summarize this result into 1-2 information rich sentences
+        """
+        last_step, last_result = state["past_results"][-1]
+        
+        # NOTE: can add in the user context if needed
+        summarize_step_system_prompt = """
+        You are a planning agent. 
+        You are responsible for taking an input action from a user and breaking it down into a plan consisting of a series of actionable steps.
+        You are also responsible for determining the success or failure of each step and analyzing the results to help determine what the next step should be.
+        """
+        
+        # NOTE: can add in the user input if needed
+        summarize_step_prompt = f"""
+        You are given a step from a plan and the result of that step.
+        First determined in that step 'FAILED' or 'SUCCEEDED'.
+        Then summarize the result into 1-2 information rich sentences. Do not exceed 2 sentences.
+        Include as much detail as possible.
+        Make sure to include the following if applicable:
+        - if tools were called, state they were called, and how many times, i.e. 'XYZ tool was called 3 times' 
+        - if anything like a summary written or analysis was performed that is the result of that step
+        
+        If the step failed, include the reason it failed.
+        If the step succeeded, include the details of the success. 
+
+        ## Step:
+        {last_step}
+
+        ## Result:
+        {last_result}
+        
+        ## Summary:
+        """
+
+        messages = [{"role": "user", "content": summarize_step_prompt}]
+
+        response = self.step_executor.message_creator.create_message(
+            state["provider"],
+            messages,
+            None,
+            summarize_step_system_prompt,
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
+        )
+
+        step_summary = self.step_executor.message_creator._parse_response_to_text(response, state["provider"])
+        return step_summary
 
     @observe(as_type="trace")
     def execute_plan(
@@ -547,6 +650,7 @@ class PlanExecAgent:
             "input": input_action,
             "langfuse_session_id": langfuse_session_id,
             "past_steps": [],
+            "past_results": [],
             "current_plan": [],
             "tool_results": {},
             "initial_plan": [],

@@ -45,17 +45,23 @@ class LLMMessageCreator:
         # Add langfuse input tracking
         langfuse_context.update_current_observation(
             input=messages,
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             session_id=langfuse_data["session_id"] if langfuse_data and "session_id" in langfuse_data else None
         )
 
-        response: Message = self.anthropic.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=4096,
-            system=system_prompt,
-            messages=messages,
-            tools=available_tools,
-        )
+        # Prepare the API call parameters
+        api_params = {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        
+        # Only add tools if they are provided and not None/empty
+        if available_tools:
+            api_params["tools"] = available_tools
+
+        response: Message = self.anthropic.messages.create(**api_params)
 
         # if no session id is provided, doesn't flush to langfuse
         if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
@@ -94,7 +100,7 @@ class LLMMessageCreator:
             model="gpt-4.1",
             messages=all_messages,
             tools=available_tools,
-            tool_choice="auto",
+            tool_choice="auto" if available_tools else None,
         )
 
         if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
@@ -111,3 +117,46 @@ class LLMMessageCreator:
                 )
 
         return response
+
+    def _parse_response_to_text(self, response, provider: ModelProvider) -> str:
+        """
+        Extract text content from an LLM response based on the provider.
+        
+        Args:
+            response: The response from the LLM
+            provider: The model provider (Anthropic or OpenAI)
+            
+        Returns:
+            str: The extracted text or an error message if no text is found
+        """
+        try:
+            if provider == ModelProvider.ANTHROPIC:
+                # Check if response has content
+                if response and hasattr(response, 'content') and response.content:
+                    # Look for text content in the response
+                    for content in response.content:
+                        if hasattr(content, 'type') and content.type == 'text':
+                            return content.text
+                        elif isinstance(content, dict) and content.get('type') == 'text':
+                            return content.get('text', '')
+                
+                return "Error: No text content found in Anthropic response"
+                
+            elif provider == ModelProvider.OPENAI:
+                # Check if response has a message with content
+                if (response and 
+                    hasattr(response, 'choices') and 
+                    response.choices and 
+                    hasattr(response.choices[0], 'message')):
+                    
+                    message = response.choices[0].message
+                    if message.content:
+                        return message.content
+                
+                return "Error: No text content found in OpenAI response"
+                
+            else:
+                return f"Error: Unsupported provider {provider}"
+        
+        except Exception as e:
+            return f"Error parsing response to text: {str(e)}"
