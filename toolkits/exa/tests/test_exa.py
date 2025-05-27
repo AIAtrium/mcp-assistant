@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import pytest
+from unittest.mock import patch, AsyncMock
 
 # Import your tools
 from arcade_exa.tools.linkedin_search import linkedin_search
@@ -73,10 +74,15 @@ async def test_crawling():
 @pytest.mark.asyncio
 async def test_competitor_finder():
     context = MockContext()
-    result = await competitor_finder(context, "web search API", exclude_domain="exa.ai", num_results=3)
-    assert "content" in result
-    assert isinstance(result["content"], list)
-    assert "web" in result["content"][0]["text"].lower() or "search" in result["content"][0]["text"].lower()
+    fake_response = AsyncMock()
+    fake_response.json.return_value = {"results": [{"name": "ExampleSearch"}]}
+    fake_response.raise_for_status.return_value = None
+
+    with patch("arcade_exa.tools.competitor_finder.httpx.AsyncClient.post", return_value=fake_response):
+        result = await competitor_finder(context, "web search API", exclude_domain="exa.ai", num_results=3)
+        assert "content" in result
+        assert isinstance(result["content"], list)
+        assert "ExampleSearch" in result["content"][0]["text"]
 
 @pytest.mark.asyncio
 async def test_company_research():

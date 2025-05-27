@@ -1,10 +1,10 @@
 [[worker]]
 
 [worker.config]
-id = "demo-worker"
+id = "more-tools-worker"
 enabled = true
 timeout = 30
 retries = 3
 secret = "10b8a790ce096c95e7c89ebd9a2deef5"
 [worker.local_source]
-packages = [ "./exa",]
+packages = ["./exa"]
