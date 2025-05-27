@@ -31,6 +31,8 @@ class State(TypedDict):
     past_results: Annotated[List[Tuple], operator.add]
     user_id: str
     task_id: str
+    status: str
+
 
 class Plan(BaseModel):
     """Plan to follow in future"""
@@ -573,6 +575,29 @@ class PlanExecAgent:
             cleaned_text = re.sub(r"\[Calling tool.*?\]", "", text)
             return cleaned_text.strip()
         
+    def _get_tool_description(self, tool, provider: ModelProvider) -> Tuple[str, str]:
+        """Extract name and description from a tool based on provider format.
+        
+        Args:
+            tool: The tool object from either OpenAI or Anthropic
+            provider: The model provider
+            
+        Returns:
+            Tuple[str, str]: (tool_name, tool_description)
+        """
+        if provider == ModelProvider.OPENAI:
+            # OpenAI tools have a nested function structure
+            if "function" in tool:
+                return (tool["function"]["name"], tool["function"]["description"])
+            # Handle reference tool which might be structured differently
+            elif "name" in tool:
+                return (tool["name"], tool["description"])
+        elif provider == ModelProvider.ANTHROPIC:
+            # Anthropic tools have a flat structure
+            return (tool["name"], tool["description"])
+        
+        raise ValueError(f"Unsupported provider: {provider}")
+    
     def _summarize_step_result(self, state: State) -> str:
         """
         Call the LLM to summarize this result into 1-2 information rich sentences
@@ -620,6 +645,141 @@ class PlanExecAgent:
 
         step_summary = self.step_executor.message_creator._parse_response_to_text(response, state["provider"])
         return step_summary
+
+    def _get_categorization_tools(self, provider: ModelProvider):
+        """Return tools for task result categorization."""
+        if provider == ModelProvider.OPENAI:
+            return [{
+                "type": "function",
+                "function": {
+                    "name": "categorize_task_result",
+                    "description": "Categorize the task execution result as either completed or failed",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": ["completed", "failed"],
+                                "description": "The status of the task execution - 'completed' if successful, 'failed' if unsuccessful"
+                            },
+                            "rationale": {
+                                "type": "string",
+                                "description": "1-2 sentence rationale explaining why the task was categorized this way"
+                            }
+                        },
+                        "required": ["status", "rationale"]
+                    }
+                }
+            }]
+        elif provider == ModelProvider.ANTHROPIC:
+            return [{
+                "name": "categorize_task_result",
+                "description": "Categorize the task execution result as either completed or failed",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "enum": ["completed", "failed"],
+                            "description": "The status of the task execution - 'completed' if successful, 'failed' if unsuccessful"
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "1-2 sentence rationale explaining why the task was categorized this way"
+                        }
+                    },
+                    "required": ["status", "rationale"]
+                }
+            }]
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+    def _extract_categorization_from_response(self, response, provider: ModelProvider) -> str:
+        """Extract categorization result from either Anthropic or OpenAI response."""
+        if provider == ModelProvider.ANTHROPIC:
+            return self._extract_categorization_anthropic(response)
+        elif provider == ModelProvider.OPENAI:
+            return self._extract_categorization_openai(response)
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+    def _extract_categorization_anthropic(self, response) -> str:
+        """Extract categorization from Anthropic response format."""
+        for content in response.content:
+            if content.type == "tool_use" and content.name == "categorize_task_result":
+                status = content.input.get("status", "failed")
+                rationale = content.input.get("rationale", "No rationale provided")
+                print(f"Task categorization rationale: {rationale}")
+                return status
+        
+        # Fallback if no tool call was made
+        print("Warning: Categorization was returned as text rather than tool call. Defaulting to 'failed'.")
+        return "failed"
+
+    def _extract_categorization_openai(self, response) -> str:
+        """Extract categorization from OpenAI response format."""
+        message = response.choices[0].message
+        
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                if tool_call.function.name == "categorize_task_result":
+                    args = json.loads(tool_call.function.arguments)
+                    status = args.get("status", "failed")
+                    rationale = args.get("rationale", "No rationale provided")
+                    print(f"Task categorization rationale: {rationale}")
+                    return status
+        
+        # Fallback if no tool call was made
+        print("Warning: Categorization was returned as text rather than tool call. Defaulting to 'failed'.")
+        return "failed"
+
+    def _categorize_task_result(self, state: State) -> str:
+        """
+        Categorize the task result into a category of 'completed' OR 'failed'.
+        """
+        categorize_task_result_system_prompt = """
+        You are a planning agent. 
+        You are responsible for taking an input action from a user and breaking it down into a plan consisting of a series of actionable steps.
+        You are also responsible for determining the success or failure of the entire task / plan once it is done running.
+        """
+
+        categorize_task_result_prompt = f"""
+        You are given a task carried out by a plan-and-execute agent, the result of the task, and the final response to the user.
+        Categorize the task result using the categorize_task_result tool.
+
+        Use 'completed' if the task was completed successfully.
+        Use 'failed' if the task failed to complete.
+
+        Return a 1-2 sentence rationale for your categorization.
+
+        ## Task:
+        {state["input"]}
+
+        ## Result:
+        {state["past_steps"]}
+
+        ## Final Response:
+        {state["response"]}
+
+        Please categorize this task result using the categorize_task_result tool.
+        """
+        
+        # Get categorization tools
+        categorization_tools = self._get_categorization_tools(state["provider"])
+        
+        messages = [{"role": "user", "content": categorize_task_result_prompt}]
+
+        response = self.step_executor.message_creator.create_message(
+            state["provider"],
+            messages,
+            categorization_tools,
+            categorize_task_result_system_prompt,
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
+        )
+
+        # Extract the status from the tool call response
+        status = self._extract_categorization_from_response(response, state["provider"])
+        return status
 
     @observe(as_type="trace")
     def execute_plan(
@@ -771,6 +931,10 @@ class PlanExecAgent:
                 langfuse_session_id=state["langfuse_session_id"],
             )
 
+        # Categorize the task result
+        task_result = self._categorize_task_result(state)
+        state["status"] = task_result
+        
         # Publish final result to Redis if enabled
         if self.redis_publisher.is_enabled():
             self.redis_publisher.publish_event("final_result", state)
@@ -778,25 +942,4 @@ class PlanExecAgent:
         # Return the final response
         return state["response"]
 
-    def _get_tool_description(self, tool, provider: ModelProvider) -> Tuple[str, str]:
-        """Extract name and description from a tool based on provider format.
-        
-        Args:
-            tool: The tool object from either OpenAI or Anthropic
-            provider: The model provider
-            
-        Returns:
-            Tuple[str, str]: (tool_name, tool_description)
-        """
-        if provider == ModelProvider.OPENAI:
-            # OpenAI tools have a nested function structure
-            if "function" in tool:
-                return (tool["function"]["name"], tool["function"]["description"])
-            # Handle reference tool which might be structured differently
-            elif "name" in tool:
-                return (tool["name"], tool["description"])
-        elif provider == ModelProvider.ANTHROPIC:
-            # Anthropic tools have a flat structure
-            return (tool["name"], tool["description"])
-        
-        raise ValueError(f"Unsupported provider: {provider}")
+    
