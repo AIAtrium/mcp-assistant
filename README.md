@@ -61,9 +61,7 @@ docker run -d --name redis-local -p 6379:6379 redis:latest
 
 Please add the following environment variables to your .env file
 ```
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_DB=0
+REDIS_URL=redis://localhost:6379
 REDIS_STREAM_NAME=plan_execution
 PUBLISH_TO_REDIS=true
 ```
@@ -75,6 +73,7 @@ Then
 KEYS * # check streams
 XLEN plan_execution # check this specific stream
 XREVRANGE plan_execution + - COUNT 1  # check the last message
+docker exec redis-local redis-cli XTRIM plan_execution MAXLEN 0 # DELETE all messages on the stream - only use for cleanup during testing
 ```
 
 ## Future Work

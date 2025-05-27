@@ -72,7 +72,7 @@ def main():
 
     print(f"INPUT_ACTION: {INPUT_ACTION}")
 
-    result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.OPENAI)
+    result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.OPENAI, task_id="testestesteststse")
     print(result)
 
 

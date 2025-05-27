@@ -30,19 +30,13 @@ class RedisPublisher:
             return
         
         try:
-            redis_host = os.getenv("REDIS_HOST", "localhost")
-            redis_port = int(os.getenv("REDIS_PORT", "6379"))
-            redis_db = int(os.getenv("REDIS_DB", "0"))
-            
-            self._redis_client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
-                db=redis_db,
+            self._redis_client = redis.from_url(
+                os.getenv("REDIS_URL"),
                 decode_responses=True
             )
             # Test connection
             self._redis_client.ping()
-            print(f"Redis client initialized successfully (host: {redis_host}:{redis_port})")
+            print(f"Redis client initialized successfully (host: {os.getenv('REDIS_URL')})")
         except Exception as e:
             print(f"Failed to initialize Redis client: {e}")
             self._redis_client = None
@@ -82,6 +76,7 @@ class RedisPublisher:
     ) -> None:
         """
         Publish state to Redis stream.
+        NOTE: If any values are None, Redis will fail to publish
         
         Args:
             event_type: Type of event (e.g., "initial_plan", "final_result")
