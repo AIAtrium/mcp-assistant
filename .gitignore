@@ -3,3 +3,4 @@
 __pycache__
 .ruff_cache
 user_inputs.py
+worker.toml
