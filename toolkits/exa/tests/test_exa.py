@@ -13,8 +13,8 @@ from arcade_exa.tools.crawling import crawling
 from arcade_exa.tools.competitor_finder import competitor_finder
 from arcade_exa.tools.company_research import company_research
 
-# Load .env for EXA_API_KEY
-load_dotenv(dotenv_path="/Users/danmeier/Git/mcp-assistant/toolkits/exa/.env")
+# Load .env for EXA_API_KEY - NOTE: defaults to the current directory
+load_dotenv()
 
 class MockContext:
     def get_secret(self, key):
