@@ -83,6 +83,9 @@ class PlanExecAgent:
         Do not add any superfluous steps.
         The result of the final step should be the final answer. Make sure that each step has all the information needed - do not skip steps.
 
+        IMPORTANT: Do not include irreversible write actions (sending emails, creating documents, posting messages, etc.) unless explicitly requested by the user. Focus on research, analysis, and information gathering steps. 
+        Only add write actions if the user specifically asks for them. If the user explicitly asks for them, assume you have permission.
+
         USER CONTEXT:
         {self.step_executor.user_context}
 
@@ -212,6 +215,15 @@ class PlanExecAgent:
         - Make sure to process ALL items completely
         - Maintain a comprehensive summary that includes information from all items
         - Don't truncate or summarize too aggressively
+
+        When an action requires specific identifiers (email addresses, user IDs, channel names, etc.), do not guess or make assumptions. Use available tools or previous step results to obtain the correct identifiers. 
+        If you cannot reliably access the required identifier after attempting to retrieve it, mark this step as failed rather than proceeding with incorrect information.
+
+        DEPENDENCY REQUIREMENTS: 
+        - Before executing this step, check if it requires data from previous steps (summaries, lists, IDs, etc.)
+        - If this step mentions creating content "containing" or "including" information, you MUST retrieve that specific information first
+        - Look for phrases like "summary of", "list of", "based on", "including data from" - these indicate dependencies
+        - If you cannot locate required data from previous steps or tool results, state "Missing required data from previous steps" and mark the step as failed
         """
 
         # Create context for the execution, including past steps
@@ -243,7 +255,15 @@ class PlanExecAgent:
             + "\n\n"
         )
 
-        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
+        final_instructions = """
+        EXECUTION CHECKLIST:
+        1. DEPENDENCY CHECK: Does this step require specific data from previous steps? If yes, locate and reference that data before proceeding.
+        2. Execute this step using the available tools.
+        3. If this step creates content that should "contain" or "include" information from previous steps, ensure you retrieve and incorporate that specific information.
+        4. If you cannot access required dependencies, explicitly state what data is missing and mark the step as failed.
+        """
+        
+        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\n{final_instructions}"
 
         result: List[str] = self.step_executor.process_input_with_agent_loop(
             execution_prompt,
@@ -286,6 +306,8 @@ class PlanExecAgent:
         Otherwise, use the submit_plan tool with an updated plan of remaining steps.
 
         Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
+        IMPORTANT: When adding new steps, do not include irreversible write actions (sending emails, creating documents, posting messages, etc.) unless explicitly requested by the user.
+        If the user explicitly asks for them, assume you have permission.
 
         If a critical step fails 3 times in a row, determine that the task is failed and use the submit_final_response tool to respond to the user.
 
