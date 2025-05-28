@@ -2,6 +2,8 @@
 
 This directory contains the custom toolkits for the MCP Assistant. We host them in the Arcade Cloud.
 
+**NOTE** This directory has its own virtual environment, `.venv/` and `requirements.txt` separate from any other modules around it. 
+
 ### How to run a toolkit locally
 
 1. From the root of the toolkit name (i.e. `toolkits/exa`) run `arcade serve`
@@ -31,12 +33,12 @@ https://docs.arcade.dev/home/build-tools/create-a-toolkit
    enabled = true
    timeout = 30
    retries = 3
-   secret = "<your-secret>"  # This is randomly generated for you by `arcade new`
+   secret = "${env:WORKER_SECRET}"  # This is randomly generated for you by `arcade new`
    [worker.local_source]
    packages = ["./exa"]  # Path to your toolkit directory
    ```
-
-3. `arcade deploy`
+3. Create and set an environmen variable called `WORKER_SECRET` with the value that `arcade new` generated for you
+4. `arcade deploy`
 
 # Tools
 
