@@ -1,0 +1,10 @@
+[[worker]]
+
+[worker.config]
+id = "arcade_exa"
+enabled = true
+timeout = 30
+retries = 3
+secret = "${env:WORKER_SECRET}"
+[worker.local_source]
+packages = ["./exa"]
