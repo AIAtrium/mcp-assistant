@@ -4,16 +4,15 @@ from typing import List
 
 
 class ModelProvider(Enum):
-    ANTHROPIC = 'anthropic'
-    OPENAI = 'openai'
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
 
 
 AVAILABLE_TOOLS = {
-    "tools":
-    {
-        "Gmail": [ 
-            "Google.SendEmail", 
-            "Google.SendDraftEmail", 
+    "tools": {
+        "Gmail": [
+            "Google.SendEmail",
+            "Google.SendDraftEmail",
             "Google.WriteDraftEmail",
             "Google.UpdateDraftEmail",
             "Google.DeleteDraftEmail",
@@ -26,7 +25,7 @@ AVAILABLE_TOOLS = {
             "Google.GetThread",
             "Google.ChangeEmailLabels",
             "Google.CreateLabel",
-            "Google.ListLabels" 
+            "Google.ListLabels",
         ],
         "Google Calendar": [
             "Google.CreateEvent",
@@ -34,7 +33,7 @@ AVAILABLE_TOOLS = {
             "Google.DeleteEvent",
             "Google.ListEvents",
             "Google.ListCalendars",
-            "Google.FindTimeSlotsWhenEveryoneIsFree"
+            "Google.FindTimeSlotsWhenEveryoneIsFree",
         ],
         "Notion": [
             "NotionToolkit.GetPageContentById",
@@ -43,7 +42,7 @@ AVAILABLE_TOOLS = {
             "NotionToolkit.SearchByTitle",
             "NotionToolkit.GetObjectMetadata",
             "NotionToolkit.GetWorkspaceStructure",
-        ]
+        ],
     },
     "toolkits": [
         "github",
@@ -53,29 +52,39 @@ AVAILABLE_TOOLS = {
         "NotionToolkit",
         "Hubspot",
         "Exa",
-    ]
+    ],
 }
 
 
 def get_tools_from_arcade(arcade_client: Arcade, provider: ModelProvider):
     tools = []
     for toolkit in AVAILABLE_TOOLS["toolkits"]:
-        tools.extend(arcade_client.tools.formatted.list(toolkit=toolkit, format=provider.value))
+        tools.extend(
+            arcade_client.tools.formatted.list(toolkit=toolkit, format=provider.value)
+        )
 
     for tool_list in AVAILABLE_TOOLS["tools"].values():
         for tool in tool_list:
-            tools.append(arcade_client.tools.formatted.get(name=tool, format=provider.value))
+            tools.append(
+                arcade_client.tools.formatted.get(name=tool, format=provider.value)
+            )
 
     return tools
 
 
-def get_toolkits_from_arcade(arcade_client: Arcade, provider: ModelProvider, enabled_toolkits: List[str] = None):
+def get_toolkits_from_arcade(
+    arcade_client: Arcade, provider: ModelProvider, enabled_toolkits: List[str] = None
+):
     if not enabled_toolkits:
         return get_tools_from_arcade(arcade_client, provider)
-    
+
     tools = []
     for toolkit in enabled_toolkits:
         if toolkit in AVAILABLE_TOOLS["toolkits"]:
-            tools.extend(arcade_client.tools.formatted.list(toolkit=toolkit, format=provider.value))
+            tools.extend(
+                arcade_client.tools.formatted.list(
+                    toolkit=toolkit, format=provider.value
+                )
+            )
 
     return tools

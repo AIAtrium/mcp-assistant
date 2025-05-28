@@ -36,14 +36,19 @@ def exa_eval_suite() -> EvalSuite:
     suite.add_case(
         name="Saying hello",
         user_message="He's actually right here, say hi to him!",
-        expected_tool_calls=[ExpectedToolCall(func=say_hello, args={"name": "John Doe"})],
+        expected_tool_calls=[
+            ExpectedToolCall(func=say_hello, args={"name": "John Doe"})
+        ],
         rubric=rubric,
         critics=[
             SimilarityCritic(critic_field="name", weight=0.5),
         ],
         additional_messages=[
             {"role": "user", "content": "My friend's name is John Doe."},
-            {"role": "assistant", "content": "It is great that you have a friend named John Doe!"},
+            {
+                "role": "assistant",
+                "content": "It is great that you have a friend named John Doe!",
+            },
         ],
     )
 

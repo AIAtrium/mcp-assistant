@@ -35,9 +35,15 @@ class ToolProcessor:
         """
 
         # Add langfuse tracking
-        if langfuse_data and "session_id" in langfuse_data and "user_id" in langfuse_data:
+        if (
+            langfuse_data
+            and "session_id" in langfuse_data
+            and "user_id" in langfuse_data
+        ):
             langfuse_context.update_current_observation(name=tool_name)
-            langfuse_context.update_current_trace(session_id=langfuse_data["session_id"], user_id=langfuse_data["user_id"])
+            langfuse_context.update_current_trace(
+                session_id=langfuse_data["session_id"], user_id=langfuse_data["user_id"]
+            )
             langfuse_context.flush()
 
         if tool_name == "reference_tool_output":
@@ -70,7 +76,7 @@ class ToolProcessor:
                 messages,
                 final_text,
                 user_id,
-                provider
+                provider,
             )
 
     def _handle_reference_tool(
@@ -87,16 +93,27 @@ class ToolProcessor:
         referenced_tool_id = tool_args["tool_id"]
         result_content = None
 
-        if state and "tool_results" in state and referenced_tool_id in state["tool_results"]:
+        if (
+            state
+            and "tool_results" in state
+            and referenced_tool_id in state["tool_results"]
+        ):
             tool_name, result_content = state["tool_results"][referenced_tool_id]
-            print(f"Successfully retrieved tool result for {tool_name} with ID {referenced_tool_id} with LLM tool call {tool_id}")
+            print(
+                f"Successfully retrieved tool result for {tool_name} with ID {referenced_tool_id} with LLM tool call {tool_id}"
+            )
         else:
             result_content = (
                 f"Error: No tool result found with ID '{referenced_tool_id}'"
             )
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content, provider
+            tool_id,
+            content,
+            assistant_message_content,
+            messages,
+            result_content,
+            provider,
         )
 
     def _handle_previous_step_tool(
@@ -111,8 +128,8 @@ class ToolProcessor:
     ) -> Tuple[List[Dict[str, Any]], Any]:
         """
         This enables the execution agent to reference the output of a previous step.
-        The result of that previous step is added to the `updated_messages` array 
-        in the `_create_tool_response` function. 
+        The result of that previous step is added to the `updated_messages` array
+        in the `_create_tool_response` function.
         These messages are fed back into the LLM during the next iteration of the execution loop,
         allowing it to take action on them.
 
@@ -120,19 +137,29 @@ class ToolProcessor:
         it could cause the LLM to run out of context window.
         """
         step_number = tool_args.get("step_number")
-        
+
         if not step_number or step_number < 1:
-            result_content = "Error: Invalid step number. Please provide a step number >= 1."
-            return self._create_tool_response(
-                tool_id, content, assistant_message_content, messages, result_content, provider
+            result_content = (
+                "Error: Invalid step number. Please provide a step number >= 1."
             )
-        
+            return self._create_tool_response(
+                tool_id,
+                content,
+                assistant_message_content,
+                messages,
+                result_content,
+                provider,
+            )
+
         # Convert to 0-based index
         step_index = step_number - 1
-        
+
         try:
-            if (state and "past_results" in state and 
-                step_index < len(state["past_results"])):
+            if (
+                state
+                and "past_results" in state
+                and step_index < len(state["past_results"])
+            ):
                 step_name, raw_result = state["past_results"][step_index]
                 # Convert list to string if needed
                 if isinstance(raw_result, list):
@@ -140,12 +167,17 @@ class ToolProcessor:
                 result_content = f"Step {step_number} ({step_name}):\n{raw_result}"
             else:
                 result_content = f"Error: No raw result found for step {step_number}. Available steps: 1-{len(state.get('past_results', []))}"
-            
+
         except Exception as e:
             result_content = f"Error retrieving step {step_number} result: {str(e)}"
-        
+
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content, provider
+            tool_id,
+            content,
+            assistant_message_content,
+            messages,
+            result_content,
+            provider,
         )
 
     def _handle_standard_tool(
@@ -178,7 +210,12 @@ class ToolProcessor:
                     result_content = f"Unable to call {tool_name} because it requires authorization. Please authorize it manually outside of this program."
 
                     return self._create_tool_response(
-                        tool_id, content, assistant_message_content, messages, result_content, provider
+                        tool_id,
+                        content,
+                        assistant_message_content,
+                        messages,
+                        result_content,
+                        provider,
                     )
 
             # Convert tool_args to dict if it's a string
@@ -192,7 +229,9 @@ class ToolProcessor:
                 user_id=user_id,
             )
 
-            final_text.append(f"[Executing tool {tool_name} with args {tool_input} with id {tool_id}]")
+            final_text.append(
+                f"[Executing tool {tool_name} with args {tool_input} with id {tool_id}]"
+            )
 
             # Handle the response
             if response.success:
@@ -215,7 +254,12 @@ class ToolProcessor:
             result_content = error_message
 
         return self._create_tool_response(
-            tool_id, content, assistant_message_content, messages, result_content, provider
+            tool_id,
+            content,
+            assistant_message_content,
+            messages,
+            result_content,
+            provider,
         )
 
     def _create_tool_response(
@@ -233,39 +277,51 @@ class ToolProcessor:
         if provider == ModelProvider.ANTHROPIC:
             # Anthropic format
             assistant_message_content.append(content)
-            updated_messages.append({"role": "assistant", "content": assistant_message_content})
-            updated_messages.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": tool_id,
-                    "content": result_content,
-                }]
-            })
+            updated_messages.append(
+                {"role": "assistant", "content": assistant_message_content}
+            )
+            updated_messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": result_content,
+                        }
+                    ],
+                }
+            )
         else:
             # OpenAI format
             tool_name = content["name"] if isinstance(content, dict) else content.name
             tool_args = content["input"] if isinstance(content, dict) else content.input
-            
+
             # Add the assistant's message with the tool call
-            updated_messages.append({
-                "role": "assistant",
-                "content": None,  # Content is null when there's a tool call
-                "tool_calls": [{
-                    "id": tool_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": json.dumps(tool_args)
-                    }
-                }]
-            })
-            
+            updated_messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,  # Content is null when there's a tool call
+                    "tool_calls": [
+                        {
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": json.dumps(tool_args),
+                            },
+                        }
+                    ],
+                }
+            )
+
             # Add the tool result
-            updated_messages.append({
-                "role": "tool",
-                "tool_call_id": tool_id,
-                "content": result_content,
-            })
+            updated_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_id,
+                    "content": result_content,
+                }
+            )
 
         return updated_messages, result_content

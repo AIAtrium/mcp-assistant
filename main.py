@@ -2,11 +2,7 @@ from datetime import datetime
 from src.plan_exec_agent import PlanExecAgent, ModelProvider, StepExecutor
 
 # deliebrately omit Github and Microsoft during testing
-DEFAULT_TOOLKITS = [
-    "google",
-    "slack",
-    "NotionToolkit"
-]
+DEFAULT_TOOLKITS = ["google", "slack", "NotionToolkit"]
 
 # NOTE: these are Default values you can override in user_inputs.py
 DATE = datetime.today().strftime("%Y-%m-%d")
@@ -58,6 +54,7 @@ except ImportError:
     print("Unable to load values from user_inputs.py found, using default values")
     ENABLED_TOOLKITS = DEFAULT_TOOLKITS
 
+
 def main():
     """
     This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
@@ -67,12 +64,14 @@ def main():
     host = PlanExecAgent(
         default_system_prompt=BASE_SYSTEM_PROMPT,
         user_context=USER_CONTEXT,
-        enabled_toolkits=ENABLED_TOOLKITS
+        enabled_toolkits=ENABLED_TOOLKITS,
     )
 
     print(f"INPUT_ACTION: {INPUT_ACTION}")
 
-    result = host.execute_plan(INPUT_ACTION, provider=ModelProvider.OPENAI, task_id="testestesteststse")
+    result = host.execute_plan(
+        INPUT_ACTION, provider=ModelProvider.OPENAI, task_id="testestesteststse"
+    )
     print(result)
 
 
@@ -82,7 +81,9 @@ def step_executor():
     This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
     Configuration can be customized in user_inputs.py, or will use defaults if not found.
     """
-    langfuse_session_id = f"step_executor_{datetime.today().strftime('%Y-%m-%d %H:%M:%S')}"
+    langfuse_session_id = (
+        f"step_executor_{datetime.today().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
     print(f"INPUT_ACTION: {INPUT_ACTION}")
 

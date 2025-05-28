@@ -16,11 +16,13 @@ from arcade_exa.tools.company_research import company_research
 # Load .env for EXA_API_KEY - NOTE: defaults to the current directory
 load_dotenv()
 
+
 class MockContext:
     def get_secret(self, key):
         if key == "EXA_API_KEY":
             return os.environ.get("EXA_API_KEY")
         return None
+
 
 @pytest.mark.asyncio
 async def test_linkedin_search():
@@ -28,7 +30,10 @@ async def test_linkedin_search():
     result = await linkedin_search(context, "Exa AI company page")
     assert "content" in result
     assert isinstance(result["content"], list)
-    assert "Exa" in result["content"][0]["text"] or "exa" in result["content"][0]["text"]
+    assert (
+        "Exa" in result["content"][0]["text"] or "exa" in result["content"][0]["text"]
+    )
+
 
 @pytest.mark.asyncio
 async def test_wikipedia_search_exa():
@@ -36,7 +41,11 @@ async def test_wikipedia_search_exa():
     result = await wikipedia_search_exa(context, "Artificial intelligence")
     assert "content" in result
     assert isinstance(result["content"], list)
-    assert "Wikipedia" in result["content"][0]["text"] or "wikipedia" in result["content"][0]["text"]
+    assert (
+        "Wikipedia" in result["content"][0]["text"]
+        or "wikipedia" in result["content"][0]["text"]
+    )
+
 
 @pytest.mark.asyncio
 async def test_web_search_exa():
@@ -44,7 +53,11 @@ async def test_web_search_exa():
     result = await web_search_exa(context, "OpenAI")
     assert "content" in result
     assert isinstance(result["content"], list)
-    assert "OpenAI" in result["content"][0]["text"] or "openai" in result["content"][0]["text"]
+    assert (
+        "OpenAI" in result["content"][0]["text"]
+        or "openai" in result["content"][0]["text"]
+    )
+
 
 @pytest.mark.asyncio
 async def test_research_paper_search():
@@ -54,6 +67,7 @@ async def test_research_paper_search():
     assert isinstance(result["content"], list)
     assert "transformer" in result["content"][0]["text"].lower()
 
+
 @pytest.mark.asyncio
 async def test_github_search():
     context = MockContext()
@@ -61,6 +75,7 @@ async def test_github_search():
     assert "content" in result
     assert isinstance(result["content"], list)
     assert "github" in result["content"][0]["text"].lower()
+
 
 @pytest.mark.asyncio
 async def test_crawling():
@@ -71,6 +86,7 @@ async def test_crawling():
     assert isinstance(result["content"], list)
     assert "exa" in result["content"][0]["text"].lower()
 
+
 @pytest.mark.asyncio
 async def test_competitor_finder():
     context = MockContext()
@@ -78,16 +94,24 @@ async def test_competitor_finder():
     fake_response.json.return_value = {"results": [{"name": "ExampleSearch"}]}
     fake_response.raise_for_status.return_value = None
 
-    with patch("arcade_exa.tools.competitor_finder.httpx.AsyncClient.post", return_value=fake_response):
-        result = await competitor_finder(context, "web search API", exclude_domain="exa.ai", num_results=3)
+    with patch(
+        "arcade_exa.tools.competitor_finder.httpx.AsyncClient.post",
+        return_value=fake_response,
+    ):
+        result = await competitor_finder(
+            context, "web search API", exclude_domain="exa.ai", num_results=3
+        )
         assert "content" in result
         assert isinstance(result["content"], list)
         assert "ExampleSearch" in result["content"][0]["text"]
 
+
 @pytest.mark.asyncio
 async def test_company_research():
     context = MockContext()
-    result = await company_research(context, "exa.ai", subpages=1, subpage_target=["about", "pricing"])
+    result = await company_research(
+        context, "exa.ai", subpages=1, subpage_target=["about", "pricing"]
+    )
     assert "content" in result
     assert isinstance(result["content"], list)
     assert "exa" in result["content"][0]["text"].lower()
