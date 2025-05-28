@@ -874,6 +874,20 @@ class PlanExecAgent:
         if self.redis_publisher.is_enabled():
             self.redis_publisher.publish_event("initial_plan", state)
 
+        state = self.execute_plan_until_completion(state, max_iterations)
+
+        # Categorize the task result
+        task_result = self._categorize_task_result(state)
+        state["status"] = task_result
+
+        # Publish final result to Redis if enabled
+        if self.redis_publisher.is_enabled():
+            self.redis_publisher.publish_event("final_result", state)
+
+        # Return the final response
+        return state["response"]
+
+    def execute_plan_until_completion(self, state: State, max_iterations: int = 25) -> str:
         # Step 2-4: Execute steps, replan, and repeat
         iteration = 0
 
@@ -914,7 +928,7 @@ class PlanExecAgent:
                     # Generate a final response based on results
                     final_response_prompt = f"""
                     ## Objective:
-                    {input_action}
+                    {state["input"]}
                     
                     ## Steps completed:
                     """
@@ -946,7 +960,7 @@ class PlanExecAgent:
             # Generate a partial response
             incomplete_response_prompt = f"""
             ## Objective:
-            {input_action}
+            {state["input"]}
             
             ## Steps completed ({iteration}/{max_iterations}, plan not completed):
             """
@@ -970,13 +984,4 @@ class PlanExecAgent:
                 langfuse_session_id=state["langfuse_session_id"],
             )
 
-        # Categorize the task result
-        task_result = self._categorize_task_result(state)
-        state["status"] = task_result
-
-        # Publish final result to Redis if enabled
-        if self.redis_publisher.is_enabled():
-            self.redis_publisher.publish_event("final_result", state)
-
-        # Return the final response
-        return state["response"]
+        return state
