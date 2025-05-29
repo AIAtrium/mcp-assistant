@@ -662,7 +662,7 @@ async def main():
         if hasattr(user_inputs, "USER_CONTEXT"):
             USER_CONTEXT = user_inputs.USER_CONTEXT
         if hasattr(user_inputs, "ENABLED_CLIENTS"):
-            ENABLED_CLIENTS = user_inputs.ENABLED_CLIENTS
+            ENABLED_CLIENTS = user_inputs.ENABLED_TOOLKITS
             print(
                 f"System will run with only the following clients:\n{ENABLED_CLIENTS}\n\n"
             )

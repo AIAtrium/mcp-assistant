@@ -3,21 +3,18 @@ import httpx
 from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
+
 @tool(requires_secrets=["EXA_API_KEY"])
 async def linkedin_search(
     context: ToolContext,
     query: Annotated[
         str,
-        "Search query for LinkedIn (e.g., <url> company page OR <company name> company page)"
+        "Search query for LinkedIn (e.g., <url> company page OR <company name> company page)",
     ],
     num_results: Annotated[
-        int,
-        "Number of search results to return (default: 5)"
+        int, "Number of search results to return (default: 5)"
     ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
-) -> Annotated[
-    dict,
-    "A dictionary containing the Exa API search results for LinkedIn"
-]:
+) -> Annotated[dict, "A dictionary containing the Exa API search results for LinkedIn"]:
     """
     Search LinkedIn for companies using Exa AI. Simply include company URL, or company name, with 'company page' appended in your query.
     """
@@ -36,10 +33,8 @@ async def linkedin_search(
         "includeDomains": ["linkedin.com"],
         "numResults": num_results,
         "contents": {
-            "text": {
-                "maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]
-            }
-        }
+            "text": {"maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]}
+        },
     }
     url = EXA_API_CONFIG["BASE_URL"] + EXA_API_CONFIG["ENDPOINTS"]["SEARCH"]
 
@@ -49,14 +44,11 @@ async def linkedin_search(
         data = response.json()
         if not data or (isinstance(data, dict) and not data.get("results")):
             return {
-                "content": [{
-                    "type": "text",
-                    "text": "No LinkedIn results found. Please try a different query."
-                }]
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "No LinkedIn results found. Please try a different query.",
+                    }
+                ]
             }
-        return {
-            "content": [{
-                "type": "text",
-                "text": str(data)
-            }]
-        }
+        return {"content": [{"type": "text", "text": str(data)}]}

@@ -3,21 +3,17 @@ import httpx
 from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
+
 @tool(requires_secrets=["EXA_API_KEY"])
 async def github_search(
     context: ToolContext,
     query: Annotated[
-        str,
-        "Search query for GitHub repositories, or Github account, or code"
+        str, "Search query for GitHub repositories, or Github account, or code"
     ],
     num_results: Annotated[
-        int,
-        "Number of search results to return (default: 5)"
+        int, "Number of search results to return (default: 5)"
     ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
-) -> Annotated[
-    dict,
-    "A dictionary containing the Exa API search results for GitHub"
-]:
+) -> Annotated[dict, "A dictionary containing the Exa API search results for GitHub"]:
     """
     Search GitHub repositories using Exa AI - performs real-time searches on GitHub.com to find relevant repositories and GitHub accounts.
     """
@@ -38,10 +34,7 @@ async def github_search(
         "type": "auto",
         "includeDomains": ["github.com"],
         "numResults": num_results,
-        "contents": {
-            "text": True,
-            "livecrawl": "always"
-        }
+        "contents": {"text": True, "livecrawl": "always"},
     }
     url = str(EXA_API_CONFIG["BASE_URL"]) + str(EXA_API_CONFIG["ENDPOINTS"]["SEARCH"])
 
@@ -51,14 +44,11 @@ async def github_search(
         data = response.json()
         if not data or (isinstance(data, dict) and not data.get("results")):
             return {
-                "content": [{
-                    "type": "text",
-                    "text": "No GitHub results found. Please try a different query."
-                }]
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "No GitHub results found. Please try a different query.",
+                    }
+                ]
             }
-        return {
-            "content": [{
-                "type": "text",
-                "text": str(data)
-            }]
-        }
+        return {"content": [{"type": "text", "text": str(data)}]}

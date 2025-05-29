@@ -86,12 +86,11 @@ class StepExecutor:
                         },
                         "required": ["tool_id"],
                     },
-                }
-                
+                },
             }
         else:
             raise ValueError(f"Unsupported provider: {provider}")
-    
+
     def _get_previous_step_tool(self, provider: ModelProvider):
         """Tool to access results from previous steps in the plan."""
         if provider == ModelProvider.ANTHROPIC:
@@ -104,7 +103,7 @@ class StepExecutor:
                         "step_number": {
                             "type": "integer",
                             "description": "The step number (1-based) to get the result from. For example, use 1 for the first step, 2 for the second step, etc.",
-                            "minimum": 1
+                            "minimum": 1,
                         },
                     },
                     "required": ["step_number"],
@@ -122,12 +121,12 @@ class StepExecutor:
                             "step_number": {
                                 "type": "integer",
                                 "description": "The step number (1-based) to get the result from. For example, use 1 for the first step, 2 for the second step, etc.",
-                                "minimum": 1
+                                "minimum": 1,
                             },
                         },
                         "required": ["step_number"],
                     },
-                }
+                },
             }
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -136,7 +135,9 @@ class StepExecutor:
         # Add tools for referencing previous results
         reference_tool = self._get_reference_tool(provider)
         previous_step_tool = self._get_previous_step_tool(provider)
-        arcade_tools = get_toolkits_from_arcade(self.arcade_client, provider, self.enabled_toolkits)
+        arcade_tools = get_toolkits_from_arcade(
+            self.arcade_client, provider, self.enabled_toolkits
+        )
         return arcade_tools + [reference_tool, previous_step_tool]
 
     @observe()
@@ -166,7 +167,11 @@ class StepExecutor:
         messages = [{"role": "user", "content": input_action}]
 
         # authorize only the enabled tools as part of the state of the agent
-        available_tools = state['tools'] if ('tools' in state and state['tools']) else self.get_all_tools(provider)
+        available_tools = (
+            state["tools"]
+            if ("tools" in state and state["tools"])
+            else self.get_all_tools(provider)
+        )
 
         response = self.message_creator.create_message(
             provider=provider,
@@ -195,50 +200,74 @@ class StepExecutor:
                     response_contents.append({"type": "text", "text": message.content})
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
-                        response_contents.append({
-                            "type": "tool_use",
-                            "name": tool_call.function.name,
-                            "input": json.loads(tool_call.function.arguments),
-                            "id": tool_call.id
-                        })
+                        response_contents.append(
+                            {
+                                "type": "tool_use",
+                                "name": tool_call.function.name,
+                                "input": json.loads(tool_call.function.arguments),
+                                "id": tool_call.id,
+                            }
+                        )
 
             for content in response_contents:
-                if ('type' in content and content["type"] == "text") or (hasattr(content, "type") and content.type == "text"):
-                    final_text.append(content["text"] if isinstance(content, dict) else content.text)
+                if ("type" in content and content["type"] == "text") or (
+                    hasattr(content, "type") and content.type == "text"
+                ):
+                    final_text.append(
+                        content["text"] if isinstance(content, dict) else content.text
+                    )
                     assistant_message_content.append(content)
-                elif ('type' in content and content["type"] == "tool_use") or (hasattr(content, "type") and content.type == "tool_use"):
+                elif ("type" in content and content["type"] == "tool_use") or (
+                    hasattr(content, "type") and content.type == "tool_use"
+                ):
                     has_tool_calls = True
-                    tool_name = content["name"] if isinstance(content, dict) else content.name
-                    tool_args = content["input"] if isinstance(content, dict) else content.input
+                    tool_name = (
+                        content["name"] if isinstance(content, dict) else content.name
+                    )
+                    tool_args = (
+                        content["input"] if isinstance(content, dict) else content.input
+                    )
                     tool_id = content["id"] if isinstance(content, dict) else content.id
 
                     # Process the specific tool call
-                    updated_messages, result_content = self.tool_processor.process_tool_call(
-                        tool_name,
-                        tool_args,
-                        tool_id,
-                        content,
-                        assistant_message_content,
-                        messages,
-                        state,
-                        final_text,
-                        user_id,
-                        provider,
-                        langfuse_data={"session_id": langfuse_session_id, "user_id": user_id},
+                    updated_messages, result_content = (
+                        self.tool_processor.process_tool_call(
+                            tool_name,
+                            tool_args,
+                            tool_id,
+                            content,
+                            assistant_message_content,
+                            messages,
+                            state,
+                            final_text,
+                            user_id,
+                            provider,
+                            langfuse_data={
+                                "session_id": langfuse_session_id,
+                                "user_id": user_id,
+                            },
+                        )
                     )
 
                     # Update conversation context
                     messages = updated_messages
-                    if result_content and tool_name != "get_previous_step_result" and tool_name != "reference_tool_output":
+                    if (
+                        result_content
+                        and tool_name != "get_previous_step_result"
+                        and tool_name != "reference_tool_output"
+                    ):
                         state["tool_results"][tool_id] = (tool_name, result_content)
-                    
+
                     # Get next response
                     response = self.message_creator.create_message(
                         provider=provider,
                         messages=messages,
                         available_tools=available_tools,
                         system_prompt=current_system_prompt,
-                        langfuse_data={"session_id": langfuse_session_id, "user_id": user_id},
+                        langfuse_data={
+                            "session_id": langfuse_session_id,
+                            "user_id": user_id,
+                        },
                     )
 
                     # Break the content loop to process the new response

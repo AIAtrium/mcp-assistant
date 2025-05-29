@@ -22,9 +22,7 @@ pprint(tools)
 
 # Example: get only Exa toolkit for Anthropic provider
 tools_subset = get_toolkits_from_arcade(
-    arcade_client,
-    ModelProvider.ANTHROPIC,
-    enabled_toolkits=["Exa"]
+    arcade_client, ModelProvider.ANTHROPIC, enabled_toolkits=["Exa"]
 )
 print("\nSubset tools (Anthropic, Exa only):")
 pprint(tools_subset)

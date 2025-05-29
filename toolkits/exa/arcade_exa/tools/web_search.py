@@ -3,21 +3,15 @@ import httpx
 from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
+
 @tool(requires_secrets=["EXA_API_KEY"])
 async def web_search_exa(
     context: ToolContext,
-    query: Annotated[
-        str,
-        "Search query"
-    ],
+    query: Annotated[str, "Search query"],
     num_results: Annotated[
-        int,
-        "Number of search results to return (default: 5)"
+        int, "Number of search results to return (default: 5)"
     ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
-) -> Annotated[
-    dict,
-    "A dictionary containing the Exa API search results for the web"
-]:
+) -> Annotated[dict, "A dictionary containing the Exa API search results for the web"]:
     """
     Search the web using Exa AI - performs real-time web searches and can scrape content from specific URLs. Supports configurable result counts and returns the content from the most relevant websites.
     """
@@ -35,11 +29,9 @@ async def web_search_exa(
         "type": "auto",
         "numResults": num_results,
         "contents": {
-            "text": {
-                "maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]
-            },
-            "livecrawl": "always"
-        }
+            "text": {"maxCharacters": EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"]},
+            "livecrawl": "always",
+        },
     }
     url = EXA_API_CONFIG["BASE_URL"] + EXA_API_CONFIG["ENDPOINTS"]["SEARCH"]
 
@@ -49,14 +41,11 @@ async def web_search_exa(
         data = response.json()
         if not data or (isinstance(data, dict) and not data.get("results")):
             return {
-                "content": [{
-                    "type": "text",
-                    "text": "No search results found. Please try a different query."
-                }]
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "No search results found. Please try a different query.",
+                    }
+                ]
             }
-        return {
-            "content": [{
-                "type": "text",
-                "text": str(data)
-            }]
-        }
+        return {"content": [{"type": "text", "text": str(data)}]}

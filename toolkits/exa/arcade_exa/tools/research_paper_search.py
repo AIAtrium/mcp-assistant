@@ -3,24 +3,20 @@ import httpx
 from arcade.sdk import ToolContext, tool
 from arcade_exa.utils import EXA_API_CONFIG
 
+
 @tool(requires_secrets=["EXA_API_KEY"])
 async def research_paper_search(
     context: ToolContext,
-    query: Annotated[
-        str,
-        "Research topic or keyword to search for"
-    ],
+    query: Annotated[str, "Research topic or keyword to search for"],
     num_results: Annotated[
-        int,
-        "Number of research papers to return (default: 5)"
+        int, "Number of research papers to return (default: 5)"
     ] = EXA_API_CONFIG["DEFAULT_NUM_RESULTS"],
     max_characters: Annotated[
         int,
-        "Maximum number of characters to return for each result's text content (Default: 3000)"
+        "Maximum number of characters to return for each result's text content (Default: 3000)",
     ] = EXA_API_CONFIG["DEFAULT_MAX_CHARACTERS"],
 ) -> Annotated[
-    dict,
-    "A dictionary containing the Exa API search results for research papers"
+    dict, "A dictionary containing the Exa API search results for research papers"
 ]:
     """
     Search across 100M+ research papers with full text access using Exa AI - performs targeted academic paper searches with deep research content coverage. Returns detailed information about relevant academic papers including titles, authors, publication dates, and full text excerpts.
@@ -40,11 +36,9 @@ async def research_paper_search(
         "type": "auto",
         "numResults": num_results,
         "contents": {
-            "text": {
-                "maxCharacters": max_characters
-            },
-            "livecrawl": "fallback"
-        }
+            "text": {"maxCharacters": max_characters},
+            "livecrawl": "fallback",
+        },
     }
     url = EXA_API_CONFIG["BASE_URL"] + EXA_API_CONFIG["ENDPOINTS"]["SEARCH"]
 
@@ -54,14 +48,11 @@ async def research_paper_search(
         data = response.json()
         if not data or (isinstance(data, dict) and not data.get("results")):
             return {
-                "content": [{
-                    "type": "text",
-                    "text": "No research papers found. Please try a different query."
-                }]
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "No research papers found. Please try a different query.",
+                    }
+                ]
             }
-        return {
-            "content": [{
-                "type": "text",
-                "text": str(data)
-            }]
-        }
+        return {"content": [{"type": "text", "text": str(data)}]}

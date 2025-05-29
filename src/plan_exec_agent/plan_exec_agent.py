@@ -20,6 +20,7 @@ class State(TypedDict):
 
     NOTE: we may have to consolidate tool_results and past_results into a single dict so that the model doesn't get confused
     """
+
     input: str
     provider: ModelProvider
     inital_plan: List[str]
@@ -82,6 +83,9 @@ class PlanExecAgent:
         Do not add any superfluous steps.
         The result of the final step should be the final answer. Make sure that each step has all the information needed - do not skip steps.
 
+        IMPORTANT: Do not include irreversible write actions (sending emails, creating documents, posting messages, etc.) unless explicitly requested by the user. Focus on research, analysis, and information gathering steps. 
+        Only add write actions if the user specifically asks for them. If the user explicitly asks for them, assume you have permission.
+
         USER CONTEXT:
         {self.step_executor.user_context}
 
@@ -103,11 +107,15 @@ class PlanExecAgent:
         # Get available tools to inform the planning
         available_tools = self.step_executor.get_all_tools(state["provider"])
         state["tools"] = available_tools
-        
+
         tool_descriptions = "\n".join(
-            [f"- {name}: {description}" 
-             for name, description in [self._get_tool_description(tool, state["provider"]) 
-                                     for tool in available_tools]]
+            [
+                f"- {name}: {description}"
+                for name, description in [
+                    self._get_tool_description(tool, state["provider"])
+                    for tool in available_tools
+                ]
+            ]
         )
         plan_prompt += (
             f"\n\nYou can use the following tools in your plan:\n{tool_descriptions}"
@@ -125,14 +133,16 @@ class PlanExecAgent:
         )
 
         steps = self._extract_plan_from_response(response, state["provider"])
-        
+
         # If something went wrong
         if not steps:
             steps = ["Error: Could not generate plan"]
 
         return Plan(steps=steps)
 
-    def _extract_plan_from_response(self, response, provider: ModelProvider) -> List[str]:
+    def _extract_plan_from_response(
+        self, response, provider: ModelProvider
+    ) -> List[str]:
         """Extract plan steps from either Anthropic or OpenAI response."""
         if provider == ModelProvider.ANTHROPIC:
             return self._extract_plan_anthropic(response)
@@ -148,32 +158,36 @@ class PlanExecAgent:
             if content.type == "tool_use" and content.name == "submit_plan":
                 steps = content.input.get("plan", [])
                 break
-        
+
         # Fallback if no tool call was made
         if not steps and response.content and response.content[0].type == "text":
-            print("Warning: Plan was returned as text rather than tool call. Attempting to parse...")
+            print(
+                "Warning: Plan was returned as text rather than tool call. Attempting to parse..."
+            )
             response_text = response.content[0].text
             steps = self.extract_plan_from_response(response_text)
-        
+
         return steps
 
     def _extract_plan_openai(self, response) -> List[str]:
         """Extract plan steps from OpenAI response format."""
         steps = []
         message = response.choices[0].message
-        
+
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 if tool_call.function.name == "submit_plan":
                     args = json.loads(tool_call.function.arguments)
                     steps = args.get("plan", [])
                     break
-        
+
         # Fallback if no tool call was made
         if not steps and message.content:
-            print("Warning: Plan was returned as text rather than tool call. Attempting to parse...")
+            print(
+                "Warning: Plan was returned as text rather than tool call. Attempting to parse..."
+            )
             steps = self.extract_plan_from_response(message.content)
-        
+
         return steps
 
     @observe()
@@ -201,6 +215,15 @@ class PlanExecAgent:
         - Make sure to process ALL items completely
         - Maintain a comprehensive summary that includes information from all items
         - Don't truncate or summarize too aggressively
+
+        When an action requires specific identifiers (email addresses, user IDs, channel names, etc.), do not guess or make assumptions. Use available tools or previous step results to obtain the correct identifiers. 
+        If you cannot reliably access the required identifier after attempting to retrieve it, mark this step as failed rather than proceeding with incorrect information.
+
+        DEPENDENCY REQUIREMENTS: 
+        - Before executing this step, check if it requires data from previous steps (summaries, lists, IDs, etc.)
+        - If this step mentions creating content "containing" or "including" information, you MUST retrieve that specific information first
+        - Look for phrases like "summary of", "list of", "based on", "including data from" - these indicate dependencies
+        - If you cannot locate required data from previous steps or tool results, state "Missing required data from previous steps" and mark the step as failed
         """
 
         # Create context for the execution, including past steps
@@ -224,16 +247,24 @@ class PlanExecAgent:
                     tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): {len(value)} items\n"
                 else:
                     tool_context += f"Tool name: {tool_name} - ID {key} (use this to reference the tool call): Data available\n"
-        
+
         objective_context = f"## Your objective:\n{state['input']}\n\n"
         plan_context = (
             f"## Overall plan:\n"
             + "\n".join([f"{i + 1}. {s}" for i, s in enumerate(state["current_plan"])])
             + "\n\n"
         )
-        
-        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\nPlease execute this step using the available tools."
-        
+
+        final_instructions = """
+        EXECUTION CHECKLIST:
+        1. DEPENDENCY CHECK: Does this step require specific data from previous steps? If yes, locate and reference that data before proceeding.
+        2. Execute this step using the available tools.
+        3. If this step creates content that should "contain" or "include" information from previous steps, ensure you retrieve and incorporate that specific information.
+        4. If you cannot access required dependencies, explicitly state what data is missing and mark the step as failed.
+        """
+
+        execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\n{final_instructions}"
+
         result: List[str] = self.step_executor.process_input_with_agent_loop(
             execution_prompt,
             state["provider"],
@@ -275,6 +306,8 @@ class PlanExecAgent:
         Otherwise, use the submit_plan tool with an updated plan of remaining steps.
 
         Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
+        IMPORTANT: When adding new steps, do not include irreversible write actions (sending emails, creating documents, posting messages, etc.) unless explicitly requested by the user.
+        If the user explicitly asks for them, assume you have permission.
 
         If a critical step fails 3 times in a row, determine that the task is failed and use the submit_final_response tool to respond to the user.
 
@@ -313,24 +346,36 @@ class PlanExecAgent:
         if state["current_plan"]:
             last_planned_step = state["current_plan"][-1]
             step_tracking_context += f"## CRITICAL STEP TRACKING:\n"
-            step_tracking_context += f"- The LAST STEP of the current plan is: \"{last_planned_step}\"\n"
-            
+            step_tracking_context += (
+                f'- The LAST STEP of the current plan is: "{last_planned_step}"\n'
+            )
+
             if state["past_steps"]:
                 last_completed_step, last_completed_result = state["past_steps"][-1]
-                step_tracking_context += f"- The LAST COMPLETED STEP was: \"{last_completed_step}\"\n"
+                step_tracking_context += (
+                    f'- The LAST COMPLETED STEP was: "{last_completed_step}"\n'
+                )
                 step_tracking_context += f"- The result of the last completed step was: {last_completed_result}\n"
-                
+
                 # Check if the last completed step matches the last planned step
                 if last_completed_step.strip() == last_planned_step.strip():
-                    step_tracking_context += f"- ✅ The last step of the plan WAS completed successfully\n"
+                    step_tracking_context += (
+                        f"- ✅ The last step of the plan WAS completed successfully\n"
+                    )
                     step_tracking_context += f"- You can now mark the task as complete if the objective has been achieved\n"
                 else:
-                    step_tracking_context += f"- ❌ The last step of the plan has NOT been completed yet\n"
-                    step_tracking_context += f"- You MUST continue with the plan - do NOT mark as complete\n"
+                    step_tracking_context += (
+                        f"- ❌ The last step of the plan has NOT been completed yet\n"
+                    )
+                    step_tracking_context += (
+                        f"- You MUST continue with the plan - do NOT mark as complete\n"
+                    )
             else:
                 step_tracking_context += f"- No steps have been completed yet\n"
-                step_tracking_context += f"- You MUST continue with the plan - do NOT mark as complete\n"
-            
+                step_tracking_context += (
+                    f"- You MUST continue with the plan - do NOT mark as complete\n"
+                )
+
             step_tracking_context += "\n"
 
         # NOTE: the context window could get very large here
@@ -396,7 +441,7 @@ class PlanExecAgent:
     def _process_replan_openai(self, response, state: State) -> Act:
         """Process OpenAI replan response."""
         message = response.choices[0].message
-        
+
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 args = json.loads(tool_call.function.arguments)
@@ -413,8 +458,10 @@ class PlanExecAgent:
 
     def _handle_text_replan_response(self, response_text: str, state: State) -> Act:
         """Handle text response for replan (shared between providers)."""
-        if ("objective has been achieved" in response_text.lower() or 
-            "final response" in response_text.lower()):
+        if (
+            "objective has been achieved" in response_text.lower()
+            or "final response" in response_text.lower()
+        ):
             return Act(action=Response(response=response_text))
         else:
             steps = self.extract_plan_from_response(response_text)
@@ -499,7 +546,7 @@ class PlanExecAgent:
                             },
                             "required": ["plan"],
                         },
-                    }
+                    },
                 },
                 "response_tool": {
                     "type": "function",
@@ -516,7 +563,7 @@ class PlanExecAgent:
                             },
                             "required": ["response"],
                         },
-                    }
+                    },
                 },
             }
         elif state["provider"] == ModelProvider.ANTHROPIC:
@@ -574,14 +621,14 @@ class PlanExecAgent:
             # but try to clean up a bit by removing tool call logs
             cleaned_text = re.sub(r"\[Calling tool.*?\]", "", text)
             return cleaned_text.strip()
-        
+
     def _get_tool_description(self, tool, provider: ModelProvider) -> Tuple[str, str]:
         """Extract name and description from a tool based on provider format.
-        
+
         Args:
             tool: The tool object from either OpenAI or Anthropic
             provider: The model provider
-            
+
         Returns:
             Tuple[str, str]: (tool_name, tool_description)
         """
@@ -595,22 +642,22 @@ class PlanExecAgent:
         elif provider == ModelProvider.ANTHROPIC:
             # Anthropic tools have a flat structure
             return (tool["name"], tool["description"])
-        
+
         raise ValueError(f"Unsupported provider: {provider}")
-    
+
     def _summarize_step_result(self, state: State) -> str:
         """
         Call the LLM to summarize this result into 1-2 information rich sentences
         """
         last_step, last_result = state["past_results"][-1]
-        
+
         # NOTE: can add in the user context if needed
         summarize_step_system_prompt = """
         You are a planning agent. 
         You are responsible for taking an input action from a user and breaking it down into a plan consisting of a series of actionable steps.
         You are also responsible for determining the success or failure of each step and analyzing the results to help determine what the next step should be.
         """
-        
+
         # NOTE: can add in the user input if needed
         summarize_step_prompt = f"""
         You are given a step from a plan and the result of that step.
@@ -643,58 +690,143 @@ class PlanExecAgent:
             {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
         )
 
-        step_summary = self.step_executor.message_creator._parse_response_to_text(response, state["provider"])
+        step_summary = self.step_executor.message_creator._parse_response_to_text(
+            response, state["provider"]
+        )
         return step_summary
+
+    def _extract_user_facing_results(self, state: State) -> List[Tuple[str, str]]:
+        """
+        Extract steps that contain RESULT: sections, which are typically the
+        user-facing outputs we want to show.
+
+        Returns:
+            List of tuples: (step_description, extracted_result)
+        """
+        import re
+
+        user_results = []
+
+        for step, result_list in state["past_results"]:
+            # result_list is a list of strings, check the last one for RESULT:
+            if result_list and len(result_list) > 0:
+                last_result = result_list[-1]  # Get the last string in the list
+
+                # Check if this contains a RESULT: section
+                result_sections = re.findall(
+                    r"RESULT:(.*?)(?=RESULT:|$)", last_result, re.DOTALL
+                )
+
+                if result_sections:
+                    # Take the last (most complete) RESULT section
+                    extracted_result = result_sections[-1].strip()
+                    user_results.append((step, extracted_result))
+
+        return user_results
+
+    def _synthesize_final_answer(
+        self, state: State, user_results: List[Tuple[str, str]]
+    ) -> str:
+        """
+        Synthesize a final answer from the extracted user-facing results.
+        """
+        if not user_results:
+            # Fallback to current behavior if no RESULT sections found
+            return state["response"]
+
+        synthesis_system_prompt = """
+        You are a planning agent. 
+        You are responsible for taking an input action from a user and breaking it down into a plan consisting of a series of actionable steps.
+        You are also responsible for determining which intermediates results from the plan's execution are most relevant to the user's original request and synthesizing a final answer to the user's original request.
+        """
+        
+        synthesis_prompt = f"""
+        ## Original User Request:
+        {state["input"]}
+        
+        ## Key Results from Plan Execution:
+        """
+
+        for i, (step, result) in enumerate(user_results, 1):
+            synthesis_prompt += f"\n{i}. From step '{step}':\n{result}\n"
+
+        synthesis_prompt += """
+        
+        You are given a task carried out by a plan-and-execute agent and the key results from the execution of the plan.
+        Determine which of the key results are most relevant to the user's original request and synthesize a final answer to the user's original request.
+
+        IMPORTANT: Attempt not to alter the intermediate results from the plan-and-execute agent. 
+        If a steps output is relevant, include the unaltered form. 
+        If a step's output is not relevant, you may discard it.
+        """
+
+        response = self.step_executor.message_creator.create_message(
+            state["provider"],
+            [{"role": "user", "content": synthesis_prompt}],
+            None,  # No tools needed
+            synthesis_system_prompt,
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
+        )
+
+        return self.step_executor.message_creator._parse_response_to_text(
+            response, state["provider"]
+        )
 
     def _get_categorization_tools(self, provider: ModelProvider):
         """Return tools for task result categorization."""
         if provider == ModelProvider.OPENAI:
-            return [{
-                "type": "function",
-                "function": {
+            return [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "categorize_task_result",
+                        "description": "Categorize the task execution result as either completed or failed",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["completed", "failed"],
+                                    "description": "The status of the task execution - 'completed' if successful, 'failed' if unsuccessful",
+                                },
+                                "rationale": {
+                                    "type": "string",
+                                    "description": "1-2 sentence rationale explaining why the task was categorized this way",
+                                },
+                            },
+                            "required": ["status", "rationale"],
+                        },
+                    },
+                }
+            ]
+        elif provider == ModelProvider.ANTHROPIC:
+            return [
+                {
                     "name": "categorize_task_result",
                     "description": "Categorize the task execution result as either completed or failed",
-                    "parameters": {
+                    "input_schema": {
                         "type": "object",
                         "properties": {
                             "status": {
                                 "type": "string",
                                 "enum": ["completed", "failed"],
-                                "description": "The status of the task execution - 'completed' if successful, 'failed' if unsuccessful"
+                                "description": "The status of the task execution - 'completed' if successful, 'failed' if unsuccessful",
                             },
                             "rationale": {
                                 "type": "string",
-                                "description": "1-2 sentence rationale explaining why the task was categorized this way"
-                            }
+                                "description": "1-2 sentence rationale explaining why the task was categorized this way",
+                            },
                         },
-                        "required": ["status", "rationale"]
-                    }
-                }
-            }]
-        elif provider == ModelProvider.ANTHROPIC:
-            return [{
-                "name": "categorize_task_result",
-                "description": "Categorize the task execution result as either completed or failed",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "status": {
-                            "type": "string",
-                            "enum": ["completed", "failed"],
-                            "description": "The status of the task execution - 'completed' if successful, 'failed' if unsuccessful"
-                        },
-                        "rationale": {
-                            "type": "string",
-                            "description": "1-2 sentence rationale explaining why the task was categorized this way"
-                        }
+                        "required": ["status", "rationale"],
                     },
-                    "required": ["status", "rationale"]
                 }
-            }]
+            ]
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
-    def _extract_categorization_from_response(self, response, provider: ModelProvider) -> str:
+    def _extract_categorization_from_response(
+        self, response, provider: ModelProvider
+    ) -> str:
         """Extract categorization result from either Anthropic or OpenAI response."""
         if provider == ModelProvider.ANTHROPIC:
             return self._extract_categorization_anthropic(response)
@@ -711,15 +843,17 @@ class PlanExecAgent:
                 rationale = content.input.get("rationale", "No rationale provided")
                 print(f"Task categorization rationale: {rationale}")
                 return status
-        
+
         # Fallback if no tool call was made
-        print("Warning: Categorization was returned as text rather than tool call. Defaulting to 'failed'.")
+        print(
+            "Warning: Categorization was returned as text rather than tool call. Defaulting to 'failed'."
+        )
         return "failed"
 
     def _extract_categorization_openai(self, response) -> str:
         """Extract categorization from OpenAI response format."""
         message = response.choices[0].message
-        
+
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 if tool_call.function.name == "categorize_task_result":
@@ -728,9 +862,11 @@ class PlanExecAgent:
                     rationale = args.get("rationale", "No rationale provided")
                     print(f"Task categorization rationale: {rationale}")
                     return status
-        
+
         # Fallback if no tool call was made
-        print("Warning: Categorization was returned as text rather than tool call. Defaulting to 'failed'.")
+        print(
+            "Warning: Categorization was returned as text rather than tool call. Defaulting to 'failed'."
+        )
         return "failed"
 
     def _categorize_task_result(self, state: State) -> str:
@@ -763,10 +899,10 @@ class PlanExecAgent:
 
         Please categorize this task result using the categorize_task_result tool.
         """
-        
+
         # Get categorization tools
         categorization_tools = self._get_categorization_tools(state["provider"])
-        
+
         messages = [{"role": "user", "content": categorize_task_result_prompt}]
 
         response = self.step_executor.message_creator.create_message(
@@ -781,60 +917,9 @@ class PlanExecAgent:
         status = self._extract_categorization_from_response(response, state["provider"])
         return status
 
-    @observe(as_type="trace")
-    def execute_plan(
-        self,
-        input_action: str,
-        provider: ModelProvider = ModelProvider.ANTHROPIC,
-        max_iterations: int = 25,
-        user_id: str = "david_test",
-        langfuse_session_id: str = None,
-        task_id: str = None
+    def execute_plan_until_completion(
+        self, state: State, max_iterations: int = 25
     ) -> str:
-        """
-        Execute a complete plan for the given query.
-
-        This method orchestrates the entire plan-execute-replan cycle:
-        1. Creates an initial plan based on the query
-        2. Executes steps one by one
-        3. Replans after each step. If a critical step in the plan fails 3 times in a row, the task is marked as failed.
-        4. Returns the final response when done
-
-        Args:
-            query: The user's query to process
-            max_iterations: Maximum number of execution steps to run
-
-        Returns:
-            The final response to the user's query
-        """
-        langfuse_session_id = langfuse_session_id or datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Initialize state with values needed for the entire lifecycle
-        state = {
-            "input": input_action,
-            "langfuse_session_id": langfuse_session_id,
-            "past_steps": [],
-            "past_results": [],
-            "current_plan": [],
-            "tool_results": {},
-            "initial_plan": [],
-            "response": "",
-            "provider": provider,
-            "user_id": user_id,
-            "task_id": task_id
-        }
-
-        # Step 1: Generate the initial plan
-        print(f"Generating initial plan for query: {input_action}")
-        plan = self.initial_plan(state)
-        state["initial_plan"] = plan.steps
-        state["current_plan"] = plan.steps.copy()
-        print(f"Initial plan generated with {len(plan.steps)} steps")
-
-        # Publish initial plan to Redis if enabled\
-        if self.redis_publisher.is_enabled():
-            self.redis_publisher.publish_event("initial_plan", state)
-
         # Step 2-4: Execute steps, replan, and repeat
         iteration = 0
 
@@ -875,7 +960,7 @@ class PlanExecAgent:
                     # Generate a final response based on results
                     final_response_prompt = f"""
                     ## Objective:
-                    {input_action}
+                    {state["input"]}
                     
                     ## Steps completed:
                     """
@@ -907,7 +992,7 @@ class PlanExecAgent:
             # Generate a partial response
             incomplete_response_prompt = f"""
             ## Objective:
-            {input_action}
+            {state["input"]}
             
             ## Steps completed ({iteration}/{max_iterations}, plan not completed):
             """
@@ -931,15 +1016,79 @@ class PlanExecAgent:
                 langfuse_session_id=state["langfuse_session_id"],
             )
 
+        # Before categorizing the task result, synthesize the final answer
+        user_results = self._extract_user_facing_results(state)
+        if user_results:
+            state["response"] = self._synthesize_final_answer(state, user_results)
+        # If no user results found, keep the existing response
+
         # Categorize the task result
         task_result = self._categorize_task_result(state)
         state["status"] = task_result
-        
+
         # Publish final result to Redis if enabled
         if self.redis_publisher.is_enabled():
             self.redis_publisher.publish_event("final_result", state)
+        
+        return state
+
+    @observe(as_type="trace")
+    def execute_plan(
+        self,
+        input_action: str,
+        provider: ModelProvider = ModelProvider.ANTHROPIC,
+        max_iterations: int = 25,
+        user_id: str = "david_test",
+        langfuse_session_id: str = None,
+        task_id: str = None,
+    ) -> str:
+        """
+        Execute a complete plan for the given query.
+
+        This method orchestrates the entire plan-execute-replan cycle:
+        1. Creates an initial plan based on the query
+        2. Executes steps one by one
+        3. Replans after each step. If a critical step in the plan fails 3 times in a row, the task is marked as failed.
+        4. Returns the final response when done
+
+        Args:
+            query: The user's query to process
+            max_iterations: Maximum number of execution steps to run
+
+        Returns:
+            The final response to the user's query
+        """
+        langfuse_session_id = langfuse_session_id or datetime.today().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        # Initialize state with values needed for the entire lifecycle
+        state = {
+            "input": input_action,
+            "langfuse_session_id": langfuse_session_id,
+            "past_steps": [],
+            "past_results": [],
+            "current_plan": [],
+            "tool_results": {},
+            "initial_plan": [],
+            "response": "",
+            "provider": provider,
+            "user_id": user_id,
+            "task_id": task_id,
+        }
+
+        # Step 1: Generate the initial plan
+        print(f"Generating initial plan for query: {input_action}")
+        plan = self.initial_plan(state)
+        state["initial_plan"] = plan.steps
+        state["current_plan"] = plan.steps.copy()
+        print(f"Initial plan generated with {len(plan.steps)} steps")
+
+        # Publish initial plan to Redis if enabled\
+        if self.redis_publisher.is_enabled():
+            self.redis_publisher.publish_event("initial_plan", state)
+
+        state = self.execute_plan_until_completion(state, max_iterations)
 
         # Return the final response
         return state["response"]
-
-    
