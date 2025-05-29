@@ -2,7 +2,7 @@ from datetime import datetime
 from src.plan_exec_agent import PlanExecAgent, ModelProvider, StepExecutor
 
 # deliebrately omit Github and Microsoft during testing
-DEFAULT_TOOLKITS = ["google", "slack", "NotionToolkit"]
+DEFAULT_TOOLKITS = ["google", "slack", "NotionToolkit", "Exa"]
 
 # NOTE: these are Default values you can override in user_inputs.py
 DATE = datetime.today().strftime("%Y-%m-%d")

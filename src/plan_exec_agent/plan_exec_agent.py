@@ -262,7 +262,7 @@ class PlanExecAgent:
         3. If this step creates content that should "contain" or "include" information from previous steps, ensure you retrieve and incorporate that specific information.
         4. If you cannot access required dependencies, explicitly state what data is missing and mark the step as failed.
         """
-        
+
         execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\n{final_instructions}"
 
         result: List[str] = self.step_executor.process_input_with_agent_loop(
@@ -695,6 +695,83 @@ class PlanExecAgent:
         )
         return step_summary
 
+    def _extract_user_facing_results(self, state: State) -> List[Tuple[str, str]]:
+        """
+        Extract steps that contain RESULT: sections, which are typically the
+        user-facing outputs we want to show.
+
+        Returns:
+            List of tuples: (step_description, extracted_result)
+        """
+        import re
+
+        user_results = []
+
+        for step, result_list in state["past_results"]:
+            # result_list is a list of strings, check the last one for RESULT:
+            if result_list and len(result_list) > 0:
+                last_result = result_list[-1]  # Get the last string in the list
+
+                # Check if this contains a RESULT: section
+                result_sections = re.findall(
+                    r"RESULT:(.*?)(?=RESULT:|$)", last_result, re.DOTALL
+                )
+
+                if result_sections:
+                    # Take the last (most complete) RESULT section
+                    extracted_result = result_sections[-1].strip()
+                    user_results.append((step, extracted_result))
+
+        return user_results
+
+    def _synthesize_final_answer(
+        self, state: State, user_results: List[Tuple[str, str]]
+    ) -> str:
+        """
+        Synthesize a final answer from the extracted user-facing results.
+        """
+        if not user_results:
+            # Fallback to current behavior if no RESULT sections found
+            return state["response"]
+
+        synthesis_system_prompt = """
+        You are a planning agent. 
+        You are responsible for taking an input action from a user and breaking it down into a plan consisting of a series of actionable steps.
+        You are also responsible for determining which intermediates results from the plan's execution are most relevant to the user's original request and synthesizing a final answer to the user's original request.
+        """
+        
+        synthesis_prompt = f"""
+        ## Original User Request:
+        {state["input"]}
+        
+        ## Key Results from Plan Execution:
+        """
+
+        for i, (step, result) in enumerate(user_results, 1):
+            synthesis_prompt += f"\n{i}. From step '{step}':\n{result}\n"
+
+        synthesis_prompt += """
+        
+        You are given a task carried out by a plan-and-execute agent and the key results from the execution of the plan.
+        Determine which of the key results are most relevant to the user's original request and synthesize a final answer to the user's original request.
+
+        IMPORTANT: Attempt not to alter the intermediate results from the plan-and-execute agent. 
+        If a steps output is relevant, include the unaltered form. 
+        If a step's output is not relevant, you may discard it.
+        """
+
+        response = self.step_executor.message_creator.create_message(
+            state["provider"],
+            [{"role": "user", "content": synthesis_prompt}],
+            None,  # No tools needed
+            synthesis_system_prompt,
+            {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
+        )
+
+        return self.step_executor.message_creator._parse_response_to_text(
+            response, state["provider"]
+        )
+
     def _get_categorization_tools(self, provider: ModelProvider):
         """Return tools for task result categorization."""
         if provider == ModelProvider.OPENAI:
@@ -840,76 +917,9 @@ class PlanExecAgent:
         status = self._extract_categorization_from_response(response, state["provider"])
         return status
 
-    @observe(as_type="trace")
-    def execute_plan(
-        self,
-        input_action: str,
-        provider: ModelProvider = ModelProvider.ANTHROPIC,
-        max_iterations: int = 25,
-        user_id: str = "david_test",
-        langfuse_session_id: str = None,
-        task_id: str = None,
+    def execute_plan_until_completion(
+        self, state: State, max_iterations: int = 25
     ) -> str:
-        """
-        Execute a complete plan for the given query.
-
-        This method orchestrates the entire plan-execute-replan cycle:
-        1. Creates an initial plan based on the query
-        2. Executes steps one by one
-        3. Replans after each step. If a critical step in the plan fails 3 times in a row, the task is marked as failed.
-        4. Returns the final response when done
-
-        Args:
-            query: The user's query to process
-            max_iterations: Maximum number of execution steps to run
-
-        Returns:
-            The final response to the user's query
-        """
-        langfuse_session_id = langfuse_session_id or datetime.today().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
-        # Initialize state with values needed for the entire lifecycle
-        state = {
-            "input": input_action,
-            "langfuse_session_id": langfuse_session_id,
-            "past_steps": [],
-            "past_results": [],
-            "current_plan": [],
-            "tool_results": {},
-            "initial_plan": [],
-            "response": "",
-            "provider": provider,
-            "user_id": user_id,
-            "task_id": task_id,
-        }
-
-        # Step 1: Generate the initial plan
-        print(f"Generating initial plan for query: {input_action}")
-        plan = self.initial_plan(state)
-        state["initial_plan"] = plan.steps
-        state["current_plan"] = plan.steps.copy()
-        print(f"Initial plan generated with {len(plan.steps)} steps")
-
-        # Publish initial plan to Redis if enabled\
-        if self.redis_publisher.is_enabled():
-            self.redis_publisher.publish_event("initial_plan", state)
-
-        state = self.execute_plan_until_completion(state, max_iterations)
-
-        # Categorize the task result
-        task_result = self._categorize_task_result(state)
-        state["status"] = task_result
-
-        # Publish final result to Redis if enabled
-        if self.redis_publisher.is_enabled():
-            self.redis_publisher.publish_event("final_result", state)
-
-        # Return the final response
-        return state["response"]
-
-    def execute_plan_until_completion(self, state: State, max_iterations: int = 25) -> str:
         # Step 2-4: Execute steps, replan, and repeat
         iteration = 0
 
@@ -1006,4 +1016,79 @@ class PlanExecAgent:
                 langfuse_session_id=state["langfuse_session_id"],
             )
 
+        # Before categorizing the task result, synthesize the final answer
+        user_results = self._extract_user_facing_results(state)
+        if user_results:
+            state["response"] = self._synthesize_final_answer(state, user_results)
+        # If no user results found, keep the existing response
+
+        # Categorize the task result
+        task_result = self._categorize_task_result(state)
+        state["status"] = task_result
+
+        # Publish final result to Redis if enabled
+        if self.redis_publisher.is_enabled():
+            self.redis_publisher.publish_event("final_result", state)
+        
         return state
+
+    @observe(as_type="trace")
+    def execute_plan(
+        self,
+        input_action: str,
+        provider: ModelProvider = ModelProvider.ANTHROPIC,
+        max_iterations: int = 25,
+        user_id: str = "david_test",
+        langfuse_session_id: str = None,
+        task_id: str = None,
+    ) -> str:
+        """
+        Execute a complete plan for the given query.
+
+        This method orchestrates the entire plan-execute-replan cycle:
+        1. Creates an initial plan based on the query
+        2. Executes steps one by one
+        3. Replans after each step. If a critical step in the plan fails 3 times in a row, the task is marked as failed.
+        4. Returns the final response when done
+
+        Args:
+            query: The user's query to process
+            max_iterations: Maximum number of execution steps to run
+
+        Returns:
+            The final response to the user's query
+        """
+        langfuse_session_id = langfuse_session_id or datetime.today().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        # Initialize state with values needed for the entire lifecycle
+        state = {
+            "input": input_action,
+            "langfuse_session_id": langfuse_session_id,
+            "past_steps": [],
+            "past_results": [],
+            "current_plan": [],
+            "tool_results": {},
+            "initial_plan": [],
+            "response": "",
+            "provider": provider,
+            "user_id": user_id,
+            "task_id": task_id,
+        }
+
+        # Step 1: Generate the initial plan
+        print(f"Generating initial plan for query: {input_action}")
+        plan = self.initial_plan(state)
+        state["initial_plan"] = plan.steps
+        state["current_plan"] = plan.steps.copy()
+        print(f"Initial plan generated with {len(plan.steps)} steps")
+
+        # Publish initial plan to Redis if enabled\
+        if self.redis_publisher.is_enabled():
+            self.redis_publisher.publish_event("initial_plan", state)
+
+        state = self.execute_plan_until_completion(state, max_iterations)
+
+        # Return the final response
+        return state["response"]
