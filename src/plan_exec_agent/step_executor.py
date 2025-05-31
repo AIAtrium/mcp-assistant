@@ -283,5 +283,7 @@ class StepExecutor:
                 break
 
             i += 1
+            if i == max_iterations:
+                print(f"WARNING:Max iterations reached: {max_iterations}.\nExiting loop.")
 
         return final_text
