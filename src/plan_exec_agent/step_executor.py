@@ -149,6 +149,7 @@ class StepExecutor:
         system_prompt: str = None,
         langfuse_session_id: str = None,
         state: Dict = None,
+        max_iterations: int = 25
     ):
         """
         Process the input with the agent loop.
@@ -164,6 +165,9 @@ class StepExecutor:
             current_step = state["current_plan"][0]
             langfuse_context.update_current_observation(name=f"{current_step}")
 
+        if self.user_context:
+            input_action += f"\n\nUSER CONTEXT:\n{self.user_context}"
+        
         messages = [{"role": "user", "content": input_action}]
 
         # authorize only the enabled tools as part of the state of the agent
@@ -182,9 +186,10 @@ class StepExecutor:
         )
 
         final_text = []
+        i = 0
 
         # Continue processing until we have a complete response
-        while True:
+        while True and i < max_iterations:
             assistant_message_content = []
             has_tool_calls = False
 
@@ -276,5 +281,7 @@ class StepExecutor:
             # the RESULT of the last item in final_text was added either above or in the tool_processor
             if not has_tool_calls:
                 break
+
+            i += 1
 
         return final_text
