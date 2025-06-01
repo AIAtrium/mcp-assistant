@@ -73,3 +73,9 @@ packages = ["src/plan_exec_agent"]
 [tool.basedpyright]
 typeCheckingMode = "basic"
 ignore = ["toolkits/"]
+venvPath="."
+
+[dependency-groups]
+dev = [
+    "ipython>=9.2.0",
+]
