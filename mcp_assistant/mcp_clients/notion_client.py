@@ -1,12 +1,14 @@
 import os
-from mcp import ClientSession, StdioServerParameters
+
 from mcp.client.stdio import stdio_client
 from mcp_clients.mcp_client import MCPClient
 
+from mcp_assistant import ClientSession, StdioServerParameters
 
-class OutlookMCPClient(MCPClient):
+
+class NotionMCPClient(MCPClient):
     def __init__(self):
-        super().__init__(name="Outlook")
+        super().__init__(name="Notion")
 
     async def connect_to_server(self, server_script_path: str) -> None:
         """Connect to an MCP server
@@ -28,6 +30,7 @@ class OutlookMCPClient(MCPClient):
         stdio_transport = await self.exit_stack.enter_async_context(
             stdio_client(server_params)
         )
+
         self.stdio, self.write = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
             ClientSession(self.stdio, self.write)

@@ -1,15 +1,19 @@
-from typing import List, Dict, Any
+from typing import Any
+
 from anthropic import Anthropic
 from anthropic.types.message import Message
-from openai import OpenAI
+from langfuse.decorators import langfuse_context, observe
+from openai import NotGiven, OpenAI
 from openai.types.chat.chat_completion import ChatCompletion
-from langfuse.decorators import observe, langfuse_context
+
 from .arcade_utils import ModelProvider
 
 
 class LLMMessageCreator:
     def __init__(
-        self, anthropic_client: Anthropic = None, openai_client: OpenAI = None
+        self,
+        anthropic_client: Anthropic | None = None,
+        openai_client: OpenAI | None = None,
     ):
         self.anthropic = anthropic_client
         self.openai = openai_client
@@ -18,10 +22,10 @@ class LLMMessageCreator:
     def create_message(
         self,
         provider: ModelProvider,
-        messages: List[Dict[str, Any]],
-        available_tools: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
+        available_tools: list[dict[str, Any]] | None,
         system_prompt: str,
-        langfuse_data: Dict[str, Any] = None,
+        langfuse_data: dict[str, Any] | None = None,
     ):
         """Wrapper method to route to the appropriate model provider."""
         if provider == ModelProvider.ANTHROPIC:
@@ -76,14 +80,16 @@ class LLMMessageCreator:
             )
             langfuse_context.flush()
 
-            # Add cost tracking
-            langfuse_context.update_current_observation(
-                usage_details={
-                    "input": response.usage.input_tokens,
-                    "output": response.usage.output_tokens,
-                    "cache_read_input_tokens": response.usage.cache_read_input_tokens,
-                }
-            )
+            if response.usage is not None:
+                # Add cost tracking
+                langfuse_context.update_current_observation(
+                    usage_details={
+                        "input": response.usage.input_tokens,
+                        "output": response.usage.output_tokens,
+                        "cache_read_input_tokens": response.usage.cache_read_input_tokens
+                        or 0,
+                    }
+                )
 
         return response
 
@@ -110,7 +116,7 @@ class LLMMessageCreator:
             model="gpt-4.1",
             messages=all_messages,
             tools=available_tools,
-            tool_choice="auto" if available_tools else None,
+            tool_choice="auto" if available_tools else NotGiven(),
         )
 
         if (
@@ -123,8 +129,7 @@ class LLMMessageCreator:
             )
             langfuse_context.flush()
 
-            # Add cost tracking if available
-            if hasattr(response, "usage"):
+            if hasattr(response, "usage") and response.usage is not None:
                 langfuse_context.update_current_observation(
                     usage_details={
                         "input": response.usage.prompt_tokens,
@@ -161,7 +166,6 @@ class LLMMessageCreator:
                 return "Error: No text content found in Anthropic response"
 
             elif provider == ModelProvider.OPENAI:
-                # Check if response has a message with content
                 if (
                     response
                     and hasattr(response, "choices")

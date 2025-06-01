@@ -1,9 +1,10 @@
+# type: ignore
+import glob
+import json
 import os
+import select
 import subprocess
 import time
-import select
-import json
-import glob
 
 
 def test_mcp_remote_simple():

@@ -1,18 +1,17 @@
-import os
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp_clients.mcp_client import MCPClient
 
 
-class ExaMCPClient(MCPClient):
+class GCalMCPClient(MCPClient):
     def __init__(self):
-        super().__init__(name="Exa")
+        super().__init__(name="Google Calendar")
 
     async def connect_to_server(self, server_script_path: str):
         """
         Connect to an MCP server
-        Usage: python exa_client.py <path_to_server_script>
-        Sample usage: python exa_client.py /Users/myusername/Documents/mcp/exa-mcp-server/build/index.js
+        Usage: python gcal_client.py <path_to_server_script>
+        Sample usage: python gcal_client.py /Users/myusername/Documents/mcp/google-calendar-mcp/dist/index.js
 
         Args:
             server_script_path: Path to the server script (.py or .js)
@@ -22,18 +21,16 @@ class ExaMCPClient(MCPClient):
         if not (is_python or is_js):
             raise ValueError("Server script must be a .py or .js file")
 
-        env = os.environ.copy()
-
         command = "python" if is_python else "node"
         server_params = StdioServerParameters(
-            command=command, args=[server_script_path], env=env
+            command=command, args=[server_script_path], env=None
         )
 
         stdio_transport = await self.exit_stack.enter_async_context(
             stdio_client(server_params)
         )
         self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(
+        self.session: ClientSession = await self.exit_stack.enter_async_context(
             ClientSession(self.stdio, self.write)
         )
 
@@ -45,6 +42,8 @@ class ExaMCPClient(MCPClient):
         print(
             f"\nConnected to server {self.name} with tools: {[tool.name for tool in tools]}"
         )
+
+        return self.session
 
     async def cleanup(self):
         """Clean up resources"""

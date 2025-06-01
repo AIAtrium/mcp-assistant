@@ -1,7 +1,11 @@
 import json
 import os
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Optional
+
+from redis.typing import EncodableT, FieldT
+
+from plan_exec_agent.plan_exec_agent import State
 
 # Add Redis import with optional handling
 try:
@@ -45,7 +49,7 @@ class RedisPublisher:
             print(f"Failed to initialize Redis client: {e}")
             self._redis_client = None
 
-    def _prepare_state_for_publishing(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def _prepare_state_for_publishing(self, state: State) -> State:
         """
         Prepare state for Redis publishing by removing heavy/sensitive data.
 
@@ -65,15 +69,15 @@ class RedisPublisher:
 
         # Convert any non-serializable objects to strings
         if "provider" in cleaned_state:
-            cleaned_state["provider"] = str(cleaned_state["provider"])
+            cleaned_state["provider"] = str(cleaned_state["provider"])  # type: ignore
 
         # Add timestamp for when this was published
-        cleaned_state["published_at"] = datetime.utcnow().isoformat()
+        cleaned_state["published_at"] = datetime.now().isoformat()
 
         return cleaned_state
 
     def publish_event(
-        self, event_type: str, state: Dict[str, Any], stream_name: Optional[str] = None
+        self, event_type: str, state: State, stream_name: Optional[str] = None
     ) -> None:
         """
         Publish state to Redis stream.
@@ -85,24 +89,24 @@ class RedisPublisher:
             stream_name: Optional stream name override
         """
         try:
-            # Use provided stream name or default from env
             stream_name = stream_name or os.getenv(
                 "REDIS_STREAM_NAME", "plan_execution"
             )
 
-            # Prepare the state for publishing
             cleaned_state = self._prepare_state_for_publishing(state)
 
-            # Create the message payload
-            message = {
+            message: dict[FieldT, EncodableT] = {
                 "event_type": event_type,
                 "session_id": state.get("langfuse_session_id", "unknown"),
                 "user_id": state.get("user_id", "unknown"),
-                "task_id": state.get("task_id"),
+                "task_id": state.get("task_id", "unknown"),
                 "data": json.dumps(cleaned_state),
             }
 
-            # Publish to Redis stream
+            if not self._redis_client:
+                raise ValueError(
+                    "Attempting to publish without redis_client initialized"
+                )
             message_id = self._redis_client.xadd(stream_name, message)
             print(
                 f"Published {event_type} to Redis stream '{stream_name}' with ID: {message_id}"

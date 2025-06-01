@@ -1,8 +1,12 @@
 import os
-from openai import OpenAI
+
+from anthropic import Anthropic
 from arcadepy import Arcade
 from arcadepy.types import ExecuteToolResponse
-from anthropic import Anthropic
+from openai import OpenAI
+
+from mcp_assistant.errors import EmptyOutput
+from mcp_assistant.utils import tool_input_from_tool_args
 
 
 def test_tool_call_with_llm():
@@ -31,8 +35,13 @@ def test_tool_call_with_llm():
         ],
         model="claude-3-5-sonnet-20240620",
         user=user_id,
-        tools=tools,
-        tool_choice="execute",  # gives the actual JSON
+        # TODO: I am surprised this works
+        # it should be a list of idcts with tools defintiions
+        tools=tools,  # type: ignore
+        # gives the actual JSON
+        # TODO: I am surpirsed this worksit should be one of
+        # Literal["none", "auto", "required"] though)
+        tool_choice="execute",  # type: ignore
     )
 
     return response.choices[0].message.content
@@ -123,8 +132,7 @@ def test_direct_tool_call():
         # Wait for the authorization to complete
         client.auth.wait_for_completion(auth_response)
 
-        # Convert tool_args string to actual dict if needed
-        tool_input = tool_args if isinstance(tool_args, dict) else eval(tool_args)
+        tool_input = tool_input_from_tool_args(tool_args)
 
         response: ExecuteToolResponse = client.tools.execute(
             tool_name=extracted_tool_name,
@@ -135,7 +143,9 @@ def test_direct_tool_call():
         print(f"Tool execution status: {response.status}")
 
         output = response.output
-        if output.error:
+        if not output:
+            raise EmptyOutput
+        if output and output.error:
             print(f"Tool execution error: {output.error.message}")
         elif isinstance(output.value, dict):
             for key, value in output.value.items():
