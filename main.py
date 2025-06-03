@@ -76,7 +76,7 @@ def main():
     print(result)
 
 
-def step_executor():
+def test_step_executor():
     """
     This uses one agentic loop to execute the input action.
     This creates a sample daily briefing for today from my gmail and google calendar then writes it to a Notion database.
@@ -102,6 +102,74 @@ def step_executor():
         langfuse_session_id=langfuse_session_id,
     )
     print(result)
+
+
+def test_insufficient_context():
+    """
+    Test the insufficient context tool by setting up a fake state where 
+    the agent should realize it doesn't have enough information to proceed.
+    """
+    from src.plan_exec_agent.types import State
+    from src.plan_exec_agent.arcade_utils import ModelProvider
+    from datetime import datetime
+    
+    print("Testing insufficient context tool...")
+    
+    # Initialize the agent
+    agent = PlanExecAgent(
+        default_system_prompt=BASE_SYSTEM_PROMPT,
+        user_context=USER_CONTEXT,
+        enabled_toolkits=ENABLED_TOOLKITS,
+    )
+    
+    # Create a fake state that simulates a scenario where the agent should 
+    # realize it doesn't have enough context
+    fake_state = State(**{
+        "input": "Reply to the important email from the client about the contract with a professional response",
+        "langfuse_session_id": f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        "past_steps": [
+            ("Search for emails from clients about contracts", "SUCCEEDED: Found 3 emails from various clients"),
+        ],
+        "past_results": [
+            ("Search for emails from clients about contracts", ["Found 3 emails from various clients, but none specifically mention 'the contract' or are clearly 'important'. Multiple clients found: ClientA, ClientB, ClientC."]),
+        ],
+        "current_plan": [
+            "Reply to the important email from the client about the contract with a professional response"
+        ],
+        "tool_results": {
+            "email_search_123": ("gmail_search", "Found 3 emails from various clients, but none specifically mention 'the contract' or are clearly marked as important")
+        },
+        "initial_plan": [
+            "Search for emails from clients about contracts",
+            "Reply to the important email from the client about the contract with a professional response"
+        ],
+        "response": "",
+        "provider": ModelProvider.OPENAI,
+        "user_id": "test_user",
+        "task_id": "test_insufficient_context",
+    })
+    
+    print("Fake state created with ambiguous email search results...")
+    print("Current step:", fake_state["current_plan"][0])
+    print("Past results:", fake_state["past_results"])
+    
+    # Execute the step - this should trigger the insufficient context tool
+    # because the agent can't determine which specific email to reply to
+    try:
+        result = agent.execute_step(fake_state)
+        print("\n=== STEP EXECUTION RESULT ===")
+        print(result)
+        
+        # Check if the step was marked as failed due to insufficient context
+        if "STEP_FAILED_INSUFFICIENT_CONTEXT" in str(fake_state["past_results"][-1]):
+            print("\n✅ SUCCESS: Insufficient context tool was triggered!")
+        else:
+            print("\n❌ FAILURE: Insufficient context tool was NOT triggered")
+            
+    except Exception as e:
+        print(f"\n❌ ERROR during execution: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

@@ -78,6 +78,7 @@ def get_toolkits_from_arcade(
     enabled_toolkits: list[str] | None = None,
 ):
     if not enabled_toolkits:
+        print("WARNING: No toolkits enabled, using all available tools")
         return get_tools_from_arcade(arcade_client, provider)
 
     tools = []

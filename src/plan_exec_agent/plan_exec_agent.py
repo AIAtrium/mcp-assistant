@@ -181,9 +181,10 @@ class PlanExecAgent:
 
         DEPENDENCY REQUIREMENTS: 
         - Before executing this step, check if it requires data from previous steps (summaries, lists, IDs, etc.)
-        - If this step mentions creating content "containing" or "including" information, you MUST retrieve that specific information first
-        - Look for phrases like "summary of", "list of", "based on", "including data from" - these indicate dependencies
         - If you cannot locate required data from previous steps or tool results, state "Missing required data from previous steps" and mark the step as failed
+
+        CRITICAL: If you determine that you do not have sufficient context or information to complete this step successfully, use the 'signal_insufficient_context' tool immediately. Do not attempt to guess, make assumptions, or provide incomplete answers. 
+        It is better to fail the step and trigger a replan than to provide incorrect or incomplete results.
         """
 
         # Create context for the execution, including past steps
@@ -217,10 +218,9 @@ class PlanExecAgent:
 
         final_instructions = """
         EXECUTION CHECKLIST:
-        1. DEPENDENCY CHECK: Does this step require specific data from previous steps? If yes, locate and reference that data before proceeding.
+        1. DEPENDENCY CHECK: Does this step require specific data from previous steps? If yes, locate and reference that data from past results or past tool calls before proceeding.
         2. Execute this step using the available tools.
-        3. If this step creates content that should "contain" or "include" information from previous steps, ensure you retrieve and incorporate that specific information.
-        4. If you cannot access required dependencies, explicitly state what data is missing and mark the step as failed.
+        3. If you determine that you do not have sufficient context or information to complete this step successfully, use the 'signal_insufficient_context' tool immediately. Do not attempt to guess, make assumptions, or provide incomplete answers. 
         """
 
         execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\n{final_instructions}"
