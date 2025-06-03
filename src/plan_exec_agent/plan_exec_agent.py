@@ -75,6 +75,13 @@ class PlanExecAgent:
 
         messages = [{"role": "user", "content": plan_prompt}]
 
+        # Determine the model to use for planning based on provider
+        planning_model = None
+        if state["provider"] == ModelProvider.OPENAI:
+            planning_model = "o3-2025-04-16"
+        elif state["provider"] == ModelProvider.ANTHROPIC:
+            planning_model = "claude-opus-4-20250514"
+
         # NOTE: we are not using the user-specific system prompt
         response = self.step_executor.message_creator.create_message(
             state["provider"],
@@ -82,6 +89,7 @@ class PlanExecAgent:
             [planning_tools["plan_tool"]],
             plan_system_prompt,
             {"session_id": state["langfuse_session_id"], "user_id": state["user_id"]},
+            model=planning_model,
         )
 
         steps = self._extract_plan_from_response(response, state["provider"])
