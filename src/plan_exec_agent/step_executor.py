@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langfuse.decorators import langfuse_context, observe
 from openai import OpenAI
 
-from .types import State
+from .agent_types import State
 
 from .arcade_utils import ModelProvider, get_toolkits_from_arcade
 from .llm_utils import LLMMessageCreator
@@ -26,6 +26,9 @@ class StepExecutor:
         self.arcade_client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
         self.tool_processor = ToolProcessor(arcade_client=self.arcade_client)
         self.enabled_toolkits = enabled_toolkits
+
+        if not enabled_toolkits:
+            print("WARNING: No toolkits enabled when initializing StepExecutor")
 
         # Initialize LLM clients
         anthropic_client = (

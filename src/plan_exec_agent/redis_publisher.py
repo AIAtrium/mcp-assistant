@@ -5,7 +5,7 @@ from typing import Optional
 
 from redis.typing import EncodableT, FieldT
 
-from .types import State
+from .agent_types import State
 
 # Add Redis import with optional handling
 try:
