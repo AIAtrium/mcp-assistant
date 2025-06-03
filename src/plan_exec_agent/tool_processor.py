@@ -67,6 +67,15 @@ class ToolProcessor:
                 state,
                 provider,
             )
+        elif tool_name == "signal_insufficient_context":
+            return self._handle_insufficient_context_tool(
+                tool_id,
+                tool_args,
+                content,
+                assistant_message_content,
+                messages,
+                provider,
+            )
         else:
             return self._handle_standard_tool(
                 tool_name,
@@ -172,6 +181,38 @@ class ToolProcessor:
         except Exception as e:
             result_content = f"Error retrieving step {step_number} result: {str(e)}"
 
+        return self._create_tool_response(
+            tool_id,
+            content,
+            assistant_message_content,
+            messages,
+            result_content,
+            provider,
+        )
+
+    def _handle_insufficient_context_tool(
+        self,
+        tool_id: str,
+        tool_args: Dict[str, Any],
+        content: Any,
+        assistant_message_content: List[Any],
+        messages: List[Dict[str, Any]],
+        provider: ModelProvider,
+    ) -> Tuple[List[Dict[str, Any]], Any]:
+        """Handle the "signal_insufficient_context" tool."""
+        reason = tool_args.get("reason")
+        if not reason:
+            result_content = "Error: No reason provided for insufficient context"
+            return self._create_tool_response(
+                tool_id,
+                content,
+                assistant_message_content,
+                messages,
+                result_content,
+                provider,
+            )
+
+        result_content = f"STEP_FAILED_INSUFFICIENT_CONTEXT: {reason}"
         return self._create_tool_response(
             tool_id,
             content,

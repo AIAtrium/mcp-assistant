@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langfuse.decorators import langfuse_context, observe
 from openai import OpenAI
 
-from plan_exec_agent.plan_exec_agent import State
+from .types import State
 
 from .arcade_utils import ModelProvider, get_toolkits_from_arcade
 from .llm_utils import LLMMessageCreator
@@ -134,14 +134,54 @@ class StepExecutor:
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
+    def _get_insufficient_context_tool(self, provider: ModelProvider):
+        """Tool to signal that the step cannot be completed due to insufficient context."""
+        if provider == ModelProvider.ANTHROPIC:
+            return {
+                "name": "signal_insufficient_context",
+                "description": "Signal that this step cannot be completed due to insufficient context or missing required information. Use this when you determine that you do not have enough information to proceed successfully with the current step. If in doubt, use this tool.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "Explanation of what specific information or context is missing that prevents completing this step.",
+                        },
+                    },
+                    "required": ["reason"],
+                },
+            }
+        elif provider == ModelProvider.OPENAI:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "signal_insufficient_context",
+                    "description": "Signal that this step cannot be completed due to insufficient context or missing required information. Use this when you determine that you do not have enough information to proceed successfully with the current step. If in doubt, use this tool.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {
+                                "type": "string",
+                                "description": "Explanation of what specific information or context is missing that prevents completing this step.",
+                            },
+                        },
+                        "required": ["reason"],
+                    },
+                },
+            }
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
     def get_all_tools(self, provider: ModelProvider):
         # Add tools for referencing previous results
         reference_tool = self._get_reference_tool(provider)
         previous_step_tool = self._get_previous_step_tool(provider)
+        insufficient_context_tool = self._get_insufficient_context_tool(provider)
         arcade_tools = get_toolkits_from_arcade(
             self.arcade_client, provider, self.enabled_toolkits
         )
-        return arcade_tools + [reference_tool, previous_step_tool]
+        # inject the custom tools first due to primacy bias
+        return [reference_tool, previous_step_tool, insufficient_context_tool] + arcade_tools
 
     @observe()
     def process_input_with_agent_loop(
@@ -254,6 +294,11 @@ class StepExecutor:
                             },
                         )
                     )
+
+                    # Check if we should break out of the loop
+                    if result_content and result_content.startswith("STEP_FAILED_INSUFFICIENT_CONTEXT"):
+                        final_text.append(result_content)
+                        return final_text
 
                     # Update conversation context
                     messages = updated_messages

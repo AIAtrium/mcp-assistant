@@ -26,30 +26,34 @@ class LLMMessageCreator:
         available_tools: list[dict[str, Any]] | None,
         system_prompt: str,
         langfuse_data: dict[str, Any] | None = None,
+        model: str | None = None,
     ):
         """Wrapper method to route to the appropriate model provider."""
         if provider == ModelProvider.ANTHROPIC:
             return self._create_claude_message(
-                messages, available_tools, system_prompt, langfuse_data
+                messages, available_tools, system_prompt, langfuse_data, model
             )
         elif provider == ModelProvider.OPENAI:
             return self._create_openai_message(
-                messages, available_tools, system_prompt, langfuse_data
+                messages, available_tools, system_prompt, langfuse_data, model
             )
         else:
             raise ValueError(f"Unsupported model provider: {provider}")
 
     def _create_claude_message(
-        self, messages, available_tools, system_prompt, langfuse_data=None
+        self, messages, available_tools, system_prompt, langfuse_data=None, model=None
     ):
         """Create a message using Claude API with the given messages and tools."""
         if not self.anthropic:
             raise ValueError("Anthropic client not initialized")
 
+        # Use provided model or default to claude-sonnet-4-20250514
+        model_name = model or "claude-sonnet-4-20250514"
+
         # Add langfuse input tracking
         langfuse_context.update_current_observation(
             input=messages,
-            model="claude-sonnet-4-20250514",
+            model=model_name,
             session_id=langfuse_data["session_id"]
             if langfuse_data and "session_id" in langfuse_data
             else None,
@@ -57,7 +61,7 @@ class LLMMessageCreator:
 
         # Prepare the API call parameters
         api_params = {
-            "model": "claude-sonnet-4-20250514",
+            "model": model_name,
             "max_tokens": 4096,
             "system": system_prompt,
             "messages": messages,
@@ -94,16 +98,19 @@ class LLMMessageCreator:
         return response
 
     def _create_openai_message(
-        self, messages, available_tools, system_prompt, langfuse_data=None
+        self, messages, available_tools, system_prompt, langfuse_data=None, model=None
     ):
         """Create a message using OpenAI API with the given messages and tools."""
         if not self.openai:
             raise ValueError("OpenAI client not initialized")
 
+        # Use provided model or default to gpt-4.1
+        model_name = model or "gpt-4.1"
+
         # Add langfuse input tracking
         langfuse_context.update_current_observation(
             input=messages,
-            model="gpt-4o",  # adjust as needed
+            model=model_name,
             session_id=langfuse_data["session_id"]
             if langfuse_data and "session_id" in langfuse_data
             else None,
@@ -113,7 +120,7 @@ class LLMMessageCreator:
         all_messages = [{"role": "system", "content": system_prompt}] + messages
 
         response: ChatCompletion = self.openai.chat.completions.create(
-            model="gpt-4.1",
+            model=model_name,
             messages=all_messages,
             tools=available_tools,
             tool_choice="auto" if available_tools else NotGiven(),
