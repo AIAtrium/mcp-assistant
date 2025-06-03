@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langfuse.decorators import langfuse_context, observe
 from openai import OpenAI
 
-from plan_exec_agent.plan_exec_agent import State
+from .types import State
 
 from .arcade_utils import ModelProvider, get_toolkits_from_arcade
 from .llm_utils import LLMMessageCreator

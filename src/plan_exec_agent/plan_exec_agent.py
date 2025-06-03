@@ -1,66 +1,13 @@
 import json
-import operator
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Tuple, Union
+from typing import List, Tuple
 
 from langfuse.decorators import observe
-from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
 
 from .arcade_utils import ModelProvider
 from .redis_publisher import RedisPublisher
 from .step_executor import StepExecutor
-
-
-class State(TypedDict):
-    """
-    The state of the plan execution.
-
-    past_steps are contain the step executed and a summarized result of the step.
-    past_results are contain the step executed and the raw result of the step, with the exception of tool calls.
-    tool_results are contain the raw results of the tool calls, with the ID mapped to the tool call.
-
-    NOTE: we may have to consolidate tool_results and past_results into a single dict so that the model doesn't get confused
-    """
-
-    input: str
-    provider: ModelProvider
-    inital_plan: List[str]
-    current_plan: List[str]
-    past_steps: Annotated[list[tuple], operator.add]
-    response: str
-    langfuse_session_id: str
-    tool_results: Dict[str, Any]
-    past_results: Annotated[list[tuple], operator.add]
-    initial_plan: list
-    user_id: str
-    task_id: str
-    status: str
-    tools: list
-    published_at: str
-
-
-class Plan(BaseModel):
-    """Plan to follow in future"""
-
-    steps: List[str] = Field(
-        description="different steps to follow, should be in sorted order"
-    )
-
-
-class Response(BaseModel):
-    """Response to user."""
-
-    response: str
-
-
-class Act(BaseModel):
-    """Action to perform."""
-
-    action: Union[Response, Plan] = Field(
-        description="Action to perform. If you want to respond to user, use Response. "
-        "If you need to further use tools to get the answer, use Plan."
-    )
+from .types import Plan, State, Act, AgentUserResponse
 
 
 class PlanExecAgent:
@@ -113,13 +60,15 @@ class PlanExecAgent:
         available_tools = self.step_executor.get_all_tools(state["provider"])
         state["tools"] = available_tools
 
-        tool_descriptions = "\n".join([
-            f"- {name}: {description}"
-            for name, description in [
-                self._get_tool_description(tool, state["provider"])
-                for tool in available_tools
+        tool_descriptions = "\n".join(
+            [
+                f"- {name}: {description}"
+                for name, description in [
+                    self._get_tool_description(tool, state["provider"])
+                    for tool in available_tools
+                ]
             ]
-        ])
+        )
         plan_prompt += (
             f"\n\nYou can use the following tools in your plan:\n{tool_descriptions}"
         )
@@ -433,7 +382,7 @@ class PlanExecAgent:
                     return Act(action=Plan(steps=new_steps))
                 elif content.name == "submit_final_response":
                     final_response = content.input.get("response", "")
-                    return Act(action=Response(response=final_response))
+                    return Act(action=AgentUserResponse(response=final_response))
 
         # Fallback if no tool call was made
         if response.content and response.content[0].type == "text":
@@ -451,7 +400,9 @@ class PlanExecAgent:
                 if tool_call.function.name == "submit_plan":
                     return Act(action=Plan(steps=args.get("plan", [])))
                 elif tool_call.function.name == "submit_final_response":
-                    return Act(action=Response(response=args.get("response", "")))
+                    return Act(
+                        action=AgentUserResponse(response=args.get("response", ""))
+                    )
 
         # Fallback if no tool call was made
         if message.content:
@@ -465,7 +416,7 @@ class PlanExecAgent:
             "objective has been achieved" in response_text.lower()
             or "final response" in response_text.lower()
         ):
-            return Act(action=Response(response=response_text))
+            return Act(action=AgentUserResponse(response=response_text))
         else:
             steps = self.extract_plan_from_response(response_text)
             return Act(action=Plan(steps=steps))
@@ -945,7 +896,7 @@ class PlanExecAgent:
             replan_result = self.replan(state)
 
             # Process the replanning result
-            if isinstance(replan_result.action, Response):
+            if isinstance(replan_result.action, AgentUserResponse):
                 # We have a final response, we're done
                 print("Plan completed with final response")
                 state["response"] = replan_result.action.response
@@ -1068,19 +1019,21 @@ class PlanExecAgent:
         )
 
         # Initialize state with values needed for the entire lifecycle
-        state: State = State(**{
-            "input": input_action,
-            "langfuse_session_id": langfuse_session_id,
-            "past_steps": [],
-            "past_results": [],
-            "current_plan": [],
-            "tool_results": {},
-            "initial_plan": [],
-            "response": "",
-            "provider": provider,
-            "user_id": user_id,
-            "task_id": task_id,
-        })
+        state: State = State(
+            **{
+                "input": input_action,
+                "langfuse_session_id": langfuse_session_id,
+                "past_steps": [],
+                "past_results": [],
+                "current_plan": [],
+                "tool_results": {},
+                "initial_plan": [],
+                "response": "",
+                "provider": provider,
+                "user_id": user_id,
+                "task_id": task_id,
+            }
+        )
 
         # Step 1: Generate the initial plan
         print(f"Generating initial plan for query: {input_action}")
