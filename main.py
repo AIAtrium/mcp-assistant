@@ -1,5 +1,6 @@
 from datetime import datetime
-from src.plan_exec_agent import PlanExecAgent, ModelProvider, StepExecutor
+
+from src.plan_exec_agent import ModelProvider, PlanExecAgent, StepExecutor
 
 # deliebrately omit Github and Microsoft during testing
 DEFAULT_TOOLKITS = ["google", "slack", "NotionToolkit", "Exa"]
@@ -34,7 +35,7 @@ Do the following:
 # Try to import user configurations, override defaults if found
 try:
     print("Loading values from user_inputs.py")
-    import user_inputs
+    import user_inputs  # pyright: ignore
 
     # Override each value individually if it exists in user_inputs
     if hasattr(user_inputs, "INPUT_ACTION"):

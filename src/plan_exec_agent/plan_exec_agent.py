@@ -1,13 +1,15 @@
 import json
 import operator
 from datetime import datetime
-from typing import Annotated, List, Tuple, Dict, Any, Union
-from typing_extensions import TypedDict
-from pydantic import BaseModel, Field
+from typing import Annotated, Any, Dict, List, Tuple, Union
+
 from langfuse.decorators import observe
-from .step_executor import StepExecutor
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
+
 from .arcade_utils import ModelProvider
 from .redis_publisher import RedisPublisher
+from .step_executor import StepExecutor
 
 
 class State(TypedDict):
@@ -25,14 +27,17 @@ class State(TypedDict):
     provider: ModelProvider
     inital_plan: List[str]
     current_plan: List[str]
-    past_steps: Annotated[List[Tuple], operator.add]
+    past_steps: Annotated[list[tuple], operator.add]
     response: str
     langfuse_session_id: str
     tool_results: Dict[str, Any]
-    past_results: Annotated[List[Tuple], operator.add]
+    past_results: Annotated[list[tuple], operator.add]
+    initial_plan: list
     user_id: str
     task_id: str
     status: str
+    tools: list
+    published_at: str
 
 
 class Plan(BaseModel):
@@ -61,9 +66,9 @@ class Act(BaseModel):
 class PlanExecAgent:
     def __init__(
         self,
-        default_system_prompt: str = None,
-        user_context: str = None,
-        enabled_toolkits: List[str] = None,
+        default_system_prompt: str | None = None,
+        user_context: str | None = None,
+        enabled_toolkits: list[str] | None = None,
     ):
         self.step_executor = StepExecutor(
             default_system_prompt, user_context, enabled_toolkits
@@ -108,15 +113,13 @@ class PlanExecAgent:
         available_tools = self.step_executor.get_all_tools(state["provider"])
         state["tools"] = available_tools
 
-        tool_descriptions = "\n".join(
-            [
-                f"- {name}: {description}"
-                for name, description in [
-                    self._get_tool_description(tool, state["provider"])
-                    for tool in available_tools
-                ]
+        tool_descriptions = "\n".join([
+            f"- {name}: {description}"
+            for name, description in [
+                self._get_tool_description(tool, state["provider"])
+                for tool in available_tools
             ]
-        )
+        ])
         plan_prompt += (
             f"\n\nYou can use the following tools in your plan:\n{tool_descriptions}"
         )
@@ -250,7 +253,7 @@ class PlanExecAgent:
 
         objective_context = f"## Your objective:\n{state['input']}\n\n"
         plan_context = (
-            f"## Overall plan:\n"
+            "## Overall plan:\n"
             + "\n".join([f"{i + 1}. {s}" for i, s in enumerate(state["current_plan"])])
             + "\n\n"
         )
@@ -265,7 +268,7 @@ class PlanExecAgent:
 
         execution_prompt = f"{objective_context}{plan_context}{past_steps_context}{tool_context}## Current step to execute:\n{step}\n\n{final_instructions}"
 
-        result: List[str] = self.step_executor.process_input_with_agent_loop(
+        result: list[str] = self.step_executor.process_input_with_agent_loop(
             execution_prompt,
             state["provider"],
             user_id=state["user_id"],
@@ -345,7 +348,7 @@ class PlanExecAgent:
         step_tracking_context = ""
         if state["current_plan"]:
             last_planned_step = state["current_plan"][-1]
-            step_tracking_context += f"## CRITICAL STEP TRACKING:\n"
+            step_tracking_context += "## CRITICAL STEP TRACKING:\n"
             step_tracking_context += (
                 f'- The LAST STEP of the current plan is: "{last_planned_step}"\n'
             )
@@ -360,20 +363,20 @@ class PlanExecAgent:
                 # Check if the last completed step matches the last planned step
                 if last_completed_step.strip() == last_planned_step.strip():
                     step_tracking_context += (
-                        f"- ✅ The last step of the plan WAS completed successfully\n"
+                        "- ✅ The last step of the plan WAS completed successfully\n"
                     )
-                    step_tracking_context += f"- You can now mark the task as complete if the objective has been achieved\n"
+                    step_tracking_context += "- You can now mark the task as complete if the objective has been achieved\n"
                 else:
                     step_tracking_context += (
-                        f"- ❌ The last step of the plan has NOT been completed yet\n"
+                        "- ❌ The last step of the plan has NOT been completed yet\n"
                     )
                     step_tracking_context += (
-                        f"- You MUST continue with the plan - do NOT mark as complete\n"
+                        "- You MUST continue with the plan - do NOT mark as complete\n"
                     )
             else:
-                step_tracking_context += f"- No steps have been completed yet\n"
+                step_tracking_context += "- No steps have been completed yet\n"
                 step_tracking_context += (
-                    f"- You MUST continue with the plan - do NOT mark as complete\n"
+                    "- You MUST continue with the plan - do NOT mark as complete\n"
                 )
 
             step_tracking_context += "\n"
@@ -725,7 +728,7 @@ class PlanExecAgent:
         return user_results
 
     def _synthesize_final_answer(
-        self, state: State, user_results: List[Tuple[str, str]]
+        self, state: State, user_results: list[tuple[str, str]]
     ) -> str:
         """
         Synthesize a final answer from the extracted user-facing results.
@@ -739,7 +742,7 @@ class PlanExecAgent:
         You are responsible for taking an input action from a user and breaking it down into a plan consisting of a series of actionable steps.
         You are also responsible for determining which intermediates results from the plan's execution are most relevant to the user's original request and synthesizing a final answer to the user's original request.
         """
-        
+
         synthesis_prompt = f"""
         ## Original User Request:
         {state["input"]}
@@ -919,7 +922,7 @@ class PlanExecAgent:
 
     def execute_plan_until_completion(
         self, state: State, max_iterations: int = 25
-    ) -> str:
+    ) -> State:
         # Step 2-4: Execute steps, replan, and repeat
         iteration = 0
 
@@ -932,7 +935,7 @@ class PlanExecAgent:
             print(f"Executing step: {current_step}")
 
             result = self.execute_step(state)
-            print(f"Step execution completed")
+            print("Step execution completed")
 
             # Update past_steps with the completed step and its result
             state["past_steps"].append((current_step, result))
@@ -973,7 +976,8 @@ class PlanExecAgent:
                         "Please provide a final summary of what was accomplished."
                     )
 
-                    state["response"] = (
+                    # TODO: this is a list! should not work ok
+                    state["response"] = (  # pyright: ignore
                         self.step_executor.process_input_with_agent_loop(
                             final_response_prompt,
                             state["provider"],
@@ -1009,7 +1013,8 @@ class PlanExecAgent:
 
             incomplete_response_prompt += "\nPlease provide a summary of progress made and what remains to be done."
 
-            state["response"] = self.step_executor.process_input_with_agent_loop(
+            # TODO: this returns a list
+            state["response"] = self.step_executor.process_input_with_agent_loop(  # pyright: ignore
                 incomplete_response_prompt,
                 state["provider"],
                 user_id=state["user_id"],
@@ -1029,18 +1034,18 @@ class PlanExecAgent:
         # Publish final result to Redis if enabled
         if self.redis_publisher.is_enabled():
             self.redis_publisher.publish_event("final_result", state)
-        
+
         return state
 
-    @observe(as_type="trace")
+    @observe(as_type="trace")  # pyright: ignore
     def execute_plan(
         self,
         input_action: str,
         provider: ModelProvider = ModelProvider.ANTHROPIC,
         max_iterations: int = 25,
         user_id: str = "david_test",
-        langfuse_session_id: str = None,
-        task_id: str = None,
+        langfuse_session_id: str | None = None,
+        task_id: str | None = None,
     ) -> str:
         """
         Execute a complete plan for the given query.
@@ -1063,7 +1068,7 @@ class PlanExecAgent:
         )
 
         # Initialize state with values needed for the entire lifecycle
-        state = {
+        state: State = State(**{
             "input": input_action,
             "langfuse_session_id": langfuse_session_id,
             "past_steps": [],
@@ -1075,7 +1080,7 @@ class PlanExecAgent:
             "provider": provider,
             "user_id": user_id,
             "task_id": task_id,
-        }
+        })
 
         # Step 1: Generate the initial plan
         print(f"Generating initial plan for query: {input_action}")

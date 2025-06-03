@@ -1,8 +1,10 @@
 import os
-from dotenv import load_dotenv
-from arcadepy import Arcade
-from plan_exec_agent.arcade_utils import get_toolkits_from_arcade, ModelProvider
 from pprint import pprint
+
+from arcadepy import Arcade
+from dotenv import load_dotenv
+
+from plan_exec_agent.arcade_utils import ModelProvider, get_toolkits_from_arcade
 
 # run from root: python -m src.plan_exec_agent.test_arcade_utils
 

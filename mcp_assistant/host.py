@@ -1,13 +1,25 @@
 import asyncio
-import sys
 import os
 from datetime import datetime
-from dotenv import load_dotenv
-from typing import List, Dict, Any, Tuple
+from typing import Any
+
 from anthropic import Anthropic
-from langfuse.decorators import observe, langfuse_context
-from mcp.types import TextResourceContents, BlobResourceContents, Tool
-from mcp_clients import *
+from dotenv import load_dotenv
+from langfuse.decorators import langfuse_context, observe
+from mcp.types import BlobResourceContents, TextResourceContents, Tool
+from mcp_clients import (
+    ExaMCPClient,
+    GCalMCPClient,
+    GmailMCPClient,
+    MCPClient,
+    NotionMCPClient,
+    OutlookMCPClient,
+    SlackMCPClient,
+    WhatsappMCPClient,
+)
+
+from mcp_assistant.errors import UninitializedSession
+from plan_exec_agent.plan_exec_agent import State
 
 load_dotenv()
 
@@ -26,9 +38,9 @@ DEFAULT_CLIENTS = [
 class MCPHost:
     def __init__(
         self,
-        default_system_prompt: str = None,
-        user_context: str = None,
-        enabled_clients: List[str] = None,
+        default_system_prompt: str | None = None,
+        user_context: str | None = None,
+        enabled_clients: list[str] | None = None,
     ):
         self.anthropic = Anthropic()
 
@@ -83,7 +95,7 @@ class MCPHost:
         self.user_context = user_context if user_context else ""
 
         # Map of tool names to client names
-        self.tool_to_client_map: Dict[str, str] = {}
+        self.tool_to_client_map: dict[str, str] = {}
 
         # custom resource access tool
         self.resource_access_tool = {
@@ -138,6 +150,9 @@ class MCPHost:
         return resources_start_message + "\n".join(resources_info)
 
     async def get_resources_info(self, client: MCPClient):
+        if not client.session:
+            raise UninitializedSession
+
         resources = []
         templates = []
 
@@ -172,7 +187,7 @@ class MCPHost:
         print(f"formatted_info: {formatted_info}")
         return formatted_info
 
-    async def get_all_tools(self) -> List[Dict[str, Any]]:
+    async def get_all_tools(self) -> list[dict[str, Any]]:
         tools, _ = await self.get_all_tools_from_servers()
         server_tools = [
             {
@@ -190,10 +205,10 @@ class MCPHost:
         ]
         return available_tools
 
-    async def get_all_tools_from_servers(self) -> Tuple[List[Tool], Dict[str, str]]:
+    async def get_all_tools_from_servers(self) -> tuple[list[Tool], dict[str, str]]:
         """Get all tools from all servers and map tool names to client names"""
-        tools: List[Tool] = []
-        tool_to_client_map: Dict[str, str] = {}
+        tools: list[Tool] = []
+        tool_to_client_map: dict[str, str] = {}
 
         for client_name, client in self.mcp_clients.items():
             response = await client.session.list_tools()
@@ -211,9 +226,9 @@ class MCPHost:
     async def process_input_with_agent_loop(
         self,
         query: str,
-        system_prompt: str = None,
-        langfuse_session_id: str = None,
-        state: Dict = None,
+        system_prompt: str | None = None,
+        langfuse_session_id: str | None = None,
+        state: State | None = None,
     ):
         # Use provided system prompt or fall back to the instance variable
         current_system_prompt = (
@@ -335,15 +350,16 @@ class MCPHost:
             # Add cost tracking
             langfuse_context.update_current_observation(
                 usage_details={
-                    "input": response.usage.input_tokens,
-                    "output": response.usage.output_tokens,
-                    "cache_read_input_tokens": response.usage.cache_read_input_tokens,
+                    "input": response.usage.input_tokens or 0,
+                    "output": response.usage.output_tokens or 0,
+                    "cache_read_input_tokens": response.usage.cache_read_input_tokens
+                    or 0,
                 }
             )
 
         return response
 
-    @observe(as_type="tool")
+    @observe(as_type="tool")  # pyright:ignore[reportArgumentType]
     async def _process_tool_call(
         self,
         tool_name,
@@ -419,23 +435,22 @@ class MCPHost:
         # Add tool usage to message
         assistant_message_content.append(content)
         updated_messages = messages.copy()
-        updated_messages.append(
-            {"role": "assistant", "content": assistant_message_content}
-        )
+        updated_messages.append({
+            "role": "assistant",
+            "content": assistant_message_content,
+        })
 
         # Add tool result to message
-        updated_messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": result_content,
-                    }
-                ],
-            }
-        )
+        updated_messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": result_content,
+                }
+            ],
+        })
 
         return updated_messages, None
 
@@ -483,23 +498,22 @@ class MCPHost:
         # Add tool usage to message
         assistant_message_content.append(content)
         updated_messages = messages.copy()
-        updated_messages.append(
-            {"role": "assistant", "content": assistant_message_content}
-        )
+        updated_messages.append({
+            "role": "assistant",
+            "content": assistant_message_content,
+        })
 
         # Add tool result to message
-        updated_messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": result_content,
-                    }
-                ],
-            }
-        )
+        updated_messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": result_content,
+                }
+            ],
+        })
 
         return updated_messages, result_content
 
@@ -551,23 +565,22 @@ class MCPHost:
 
         # Add tool usage to message
         assistant_message_content.append(content)
-        updated_messages.append(
-            {"role": "assistant", "content": assistant_message_content}
-        )
+        updated_messages.append({
+            "role": "assistant",
+            "content": assistant_message_content,
+        })
 
         # Add tool result to message
-        updated_messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": result_content,
-                    }
-                ],
-            }
-        )
+        updated_messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": result_content,
+                }
+            ],
+        })
 
         return updated_messages, result_content
 
@@ -652,7 +665,7 @@ async def main():
     # Try to import user configurations, override defaults if found
     try:
         print("Loading values from user_inputs.py")
-        import user_inputs
+        import user_inputs  # pyright:ignore[reportMissingImports]
 
         # Override each value individually if it exists in user_inputs
         if hasattr(user_inputs, "QUERY"):

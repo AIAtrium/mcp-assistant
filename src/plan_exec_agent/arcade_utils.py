@@ -1,6 +1,6 @@
-from arcadepy import Arcade
 from enum import Enum
-from typing import List
+
+from arcadepy import Arcade
 
 
 class ModelProvider(Enum):
@@ -73,7 +73,9 @@ def get_tools_from_arcade(arcade_client: Arcade, provider: ModelProvider):
 
 
 def get_toolkits_from_arcade(
-    arcade_client: Arcade, provider: ModelProvider, enabled_toolkits: List[str] = None
+    arcade_client: Arcade,
+    provider: ModelProvider,
+    enabled_toolkits: list[str] | None = None,
 ):
     if not enabled_toolkits:
         return get_tools_from_arcade(arcade_client, provider)

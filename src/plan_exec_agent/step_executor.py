@@ -1,14 +1,17 @@
-import os
 import json
-from dotenv import load_dotenv
-from typing import List, Dict
+import os
+
 from anthropic import Anthropic
-from openai import OpenAI
 from arcadepy import Arcade
-from langfuse.decorators import observe, langfuse_context
-from .arcade_utils import get_toolkits_from_arcade, ModelProvider
-from .tool_processor import ToolProcessor
+from dotenv import load_dotenv
+from langfuse.decorators import langfuse_context, observe
+from openai import OpenAI
+
+from plan_exec_agent.plan_exec_agent import State
+
+from .arcade_utils import ModelProvider, get_toolkits_from_arcade
 from .llm_utils import LLMMessageCreator
+from .tool_processor import ToolProcessor
 
 load_dotenv()
 
@@ -16,9 +19,9 @@ load_dotenv()
 class StepExecutor:
     def __init__(
         self,
-        default_system_prompt: str = None,
-        user_context: str = None,
-        enabled_toolkits: List[str] = None,
+        default_system_prompt: str | None = None,
+        user_context: str | None = None,
+        enabled_toolkits: list[str] | None = None,
     ):
         self.arcade_client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
         self.tool_processor = ToolProcessor(arcade_client=self.arcade_client)
@@ -146,10 +149,10 @@ class StepExecutor:
         input_action: str,
         provider: ModelProvider,
         user_id: str,
-        system_prompt: str = None,
-        langfuse_session_id: str = None,
-        state: Dict = None,
-        max_iterations: int = 25
+        system_prompt: str | None = None,
+        langfuse_session_id: str | None = None,
+        state: State | None = None,
+        max_iterations: int = 25,
     ):
         """
         Process the input with the agent loop.
@@ -167,7 +170,7 @@ class StepExecutor:
 
         if self.user_context:
             input_action += f"\n\nUSER CONTEXT:\n{self.user_context}"
-        
+
         messages = [{"role": "user", "content": input_action}]
 
         # authorize only the enabled tools as part of the state of the agent
@@ -205,14 +208,12 @@ class StepExecutor:
                     response_contents.append({"type": "text", "text": message.content})
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
-                        response_contents.append(
-                            {
-                                "type": "tool_use",
-                                "name": tool_call.function.name,
-                                "input": json.loads(tool_call.function.arguments),
-                                "id": tool_call.id,
-                            }
-                        )
+                        response_contents.append({
+                            "type": "tool_use",
+                            "name": tool_call.function.name,
+                            "input": json.loads(tool_call.function.arguments),
+                            "id": tool_call.id,
+                        })
 
             for content in response_contents:
                 if ("type" in content and content["type"] == "text") or (
@@ -284,6 +285,8 @@ class StepExecutor:
 
             i += 1
             if i == max_iterations:
-                print(f"WARNING:Max iterations reached: {max_iterations}.\nExiting loop.")
+                print(
+                    f"WARNING:Max iterations reached: {max_iterations}.\nExiting loop."
+                )
 
         return final_text

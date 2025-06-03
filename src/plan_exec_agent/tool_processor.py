@@ -1,31 +1,32 @@
 import json
 import os
-from typing import Dict, List, Tuple, Any
-from langfuse.decorators import observe
-from langfuse.decorators import langfuse_context
+from typing import Any, Dict, List, Tuple
+
 from arcadepy import Arcade
 from arcadepy.types import ExecuteToolResponse
-from .arcade_utils import ModelProvider
+from langfuse.decorators import langfuse_context, observe
+
+from plan_exec_agent.arcade_utils import ModelProvider
 
 
 class ToolProcessor:
-    def __init__(self, arcade_client: Arcade = None):
+    def __init__(self, arcade_client: Arcade):
         self.arcade_client = arcade_client
 
-    @observe(as_type="tool")
+    @observe(as_type="tool")  # pyright: ignore
     def process_tool_call(
         self,
         tool_name: str,
         tool_args: Dict[str, Any],
         tool_id: str,
         content: Any,
-        assistant_message_content: List[Any],
-        messages: List[Dict[str, Any]],
-        state: Dict[str, Any],
-        final_text: List[str],
+        assistant_message_content: list[Any],
+        messages: list[Dict[str, Any]],
+        state: dict[str, Any],
+        final_text: list[str],
         user_id: str,
         provider: ModelProvider,
-        langfuse_data: Dict[str, Any] = None,
+        langfuse_data: dict[str, Any] | None = None,
     ) -> Tuple[List[Dict[str, Any]], Any]:
         """
         Process a specific tool call and return updated messages and result content.
@@ -236,6 +237,8 @@ class ToolProcessor:
             # Handle the response
             if response.success:
                 output = response.output
+                if output is None:
+                    raise ValueError("Successful tool execution without output")
                 if output.error:
                     result_content = f"Error: {output.error.message}"
                 else:
@@ -277,51 +280,46 @@ class ToolProcessor:
         if provider == ModelProvider.ANTHROPIC:
             # Anthropic format
             assistant_message_content.append(content)
-            updated_messages.append(
-                {"role": "assistant", "content": assistant_message_content}
-            )
-            updated_messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tool_id,
-                            "content": result_content,
-                        }
-                    ],
-                }
-            )
+            updated_messages.append({
+                "role": "assistant",
+                "content": assistant_message_content,
+            })
+            updated_messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": result_content,
+                    }
+                ],
+            })
         else:
             # OpenAI format
             tool_name = content["name"] if isinstance(content, dict) else content.name
             tool_args = content["input"] if isinstance(content, dict) else content.input
 
             # Add the assistant's message with the tool call
-            updated_messages.append(
-                {
-                    "role": "assistant",
-                    "content": None,  # Content is null when there's a tool call
-                    "tool_calls": [
-                        {
-                            "id": tool_id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_name,
-                                "arguments": json.dumps(tool_args),
-                            },
-                        }
-                    ],
-                }
-            )
+            updated_messages.append({
+                "role": "assistant",
+                "content": None,  # Content is null when there's a tool call
+                "tool_calls": [
+                    {
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json.dumps(tool_args),
+                        },
+                    }
+                ],
+            })
 
             # Add the tool result
-            updated_messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "content": result_content,
-                }
-            )
+            updated_messages.append({
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": result_content,
+            })
 
         return updated_messages, result_content
