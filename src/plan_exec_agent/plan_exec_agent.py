@@ -7,7 +7,7 @@ from langfuse.decorators import observe
 from .arcade_utils import ModelProvider
 from .redis_publisher import RedisPublisher
 from .step_executor import StepExecutor
-from .types import Plan, State, Act, AgentUserResponse
+from .agent_types import Plan, State, Act, AgentUserResponse
 
 
 class PlanExecAgent:

@@ -109,7 +109,7 @@ def test_insufficient_context():
     Test the insufficient context tool by setting up a fake state where 
     the agent should realize it doesn't have enough information to proceed.
     """
-    from src.plan_exec_agent.types import State
+    from plan_exec_agent.agent_types import State
     from src.plan_exec_agent.arcade_utils import ModelProvider
     from datetime import datetime
     
